@@ -94,8 +94,8 @@ Working notes so that work can continue after a context reset. Keep this file cu
 
 ## Known issues / not verified
 
-- GitHub Pages is switched on (configure-pages succeeds), but the deploy step of the first runs hung at
-  "updating_pages" for 10 min and timed out (GitHub side). Re-run "Test pages" if the site is not up. The sample
+- GitHub Pages works: since run 11 the "Test pages" workflow deploys on every push to main (the first deploys hung at
+  "updating_pages" on GitHub's side and timed out). The sample
   `nextjs.yml` workflow added on GitHub was removed: there is no package.json at the repo root, so it always fails, and it
   shares the "pages" concurrency group with `pages.yml`.
 - Dental desktop scroll mode is 1.3 fps (2.3 %) slower than 1.1.0 in every repeat; turning each new motion part off
