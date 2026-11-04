@@ -163,7 +163,7 @@ function verify(name, url, device, label, checks, extra) {
       pixel_pct: rep.pixelDiff != null ? +(rep.pixelDiff * 100).toFixed(3) : null,
       viewport_heights: rep.pageViewportHeights || null,
       scroll_curve: rep.scrollCurve ? rep.scrollCurve.map((p) => p.progress) : null,
-      manual: rep.manual || null, fixed: rep.fixed || null, protect: rep.protect || null
+      manual: rep.manual || null, fixed: rep.fixed || null, protect: rep.protect || null, motion: rep.motion || null
     };
   });
   fs.writeFileSync(path.join(OUT, 'summary.json'), JSON.stringify(rows, null, 2));
@@ -177,6 +177,16 @@ function verify(name, url, device, label, checks, extra) {
   });
   rows.filter((r) => r.fixed).forEach((r) => md.push('- fixed ' + r.page + '/' + r.device + ': ' + r.fixed.samples + ' pixel samples of ' + (r.fixed.elements.join(', ') || 'no fixed element') + ', covered ' + r.fixed.covered));
   rows.filter((r) => r.protect && r.protect.above).forEach((r) => md.push('- above the view ' + r.page + '/' + r.device + ': ' + r.protect.above.probes + ' probes, ' + r.protect.above.checked + ' layer checks, not final ' + r.protect.above.bad));
+  rows.filter((r) => r.motion).forEach((r) => {
+    const m = r.motion, o = m.opening || {}, f = m.finale || {}, g = m.gravity || {}, d = m.difficulty || {}, ms = m.mouse;
+    const pc = (x) => x == null ? '—' : Math.round(x * 1000) / 10 + ' %';
+    md.push('- motion ' + r.page + '/' + r.device + ': opening swarms ' + JSON.stringify(o.swarms) + ' around ' + ((o.focus && (o.focus.el || o.focus.src)) || '?') + ', speed CV ' + o.speedCv +
+      '; finale around ' + ((f.focus && (f.focus.el || f.focus.src)) || '?') + ' (' + (f.focus && f.focus.src) + '), overshoot ' + pc(f.overshoot) + ', gathered ' + pc(f.gathered) +
+      '; sag horizontal ' + pc(g.sagHorizontal) + ' (heavy ' + pc(g.sagHeavy) + ', light ' + pc(g.sagLight) + '), vertical ' + pc(g.sagVertical) + ', max ' + g.maxSagPx + ' px' +
+      '; difficulty rho ' + d.spearman + ', big/small ' + d.bigToSmallWork + 'x' +
+      (ms ? '; mouse min ' + ms.minDistance + ' px, follow slow ' + ms.slow.avgDur + ' s / fast ' + ms.fast.avgDur + ' s' : ''));
+    if (m.sheets) md.push('  sheets: ' + m.sheets.join(', '));
+  });
   fs.writeFileSync(path.join(OUT, 'summary.md'), md.join('\n') + '\n');
   console.log('\n' + md.join('\n'));
   console.log('\nresults: ' + OUT);

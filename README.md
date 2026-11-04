@@ -3,7 +3,11 @@
 A Claude Code skill that adds a "the page rebuilds itself" intro effect to an existing website: a swarm of pastel
 agent cursors hides the finished page and rebuilds it layer by layer, Figma-style (selection frames with size
 labels, typing, image reveals, clone-and-rewrite of repeated items). The build follows the visitor's scrolling.
-Visitors see no controls: any click or key shows the finished page at once, and reduced motion means no effect.
+The motion is meant to look alive but stay subtle: swarms of different sizes around a focus element you choose, a
+spring-like finale, paths that bend with the weight of the carried element, bigger parts taking longer, and on desktop
+agents that dodge the mouse pointer and follow it for a moment.
+Visitors see no controls: any click or key (scroll keys only scroll) shows the finished page at once, and reduced
+motion means no effect.
 It only changes what is shown: the page's DOM is untouched, there is no layout shift, no dependencies, no network
 requests and no sound, and the page is never left half hidden (errors, stuck parts, a stopped script, resizing and
 background tabs all end with the whole page visible). Works on plain HTML, React and Next.js sites.
@@ -60,7 +64,7 @@ ffmpeg (contact sheets) and npm access (the Next.js test app installs its depend
 cd page-swarm-rebuild
 node scripts/run-tests.cjs                 # demo + dental + Next.js, desktop + mobile, ~35 min
 node scripts/run-tests.cjs --quick         # without the 45 s tour run and the demo fast run
-node scripts/bench-fps.cjs --old-ref c332016   # frame rate: 1.0.1 (commit c332016) against the working copy
+node scripts/bench-fps.cjs --old-ref 5be439c   # frame rate + build time: 1.1.0 (commit 5be439c) against the working copy
 ```
 
 Results go to the system temp folder (`page-swarm-rebuild-check/summary.md`); nothing is written into the repo.

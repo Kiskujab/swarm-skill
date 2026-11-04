@@ -1,6 +1,6 @@
 ---
 name: page-swarm-rebuild
-description: Adds the "page rebuilds itself" effect to an existing website (plain HTML, React or Next.js) - a swarm of colourful agent cursors hides the finished page, then rebuilds it layer by layer (selection frames with size labels, typing, image reveals, clone-and-rewrite of repeated items, rulers and guides), following the visitor's scrolling. Visitors see no controls; any click or key shows the finished page at once; reduced motion means no effect. No sound. A separate debug add-on (control bar, auto-scrolling tour, test hooks) exists for testing and recordings. Use when the user asks for a cursor swarm / agents rebuilding the page, a "Figma multiplayer building the site" intro, a "page builds itself" or "rebuild animation" effect, or mentions page-swarm-rebuild.
+description: Adds the "page rebuilds itself" effect to an existing website (plain HTML, React or Next.js) - a swarm of colourful agent cursors hides the finished page, then rebuilds it layer by layer (selection frames with size labels, typing, image reveals, clone-and-rewrite of repeated items, rulers and guides), following the visitor's scrolling, with natural motion (swarms around a focus element, a spring-like finale, gravity-bent paths, mouse curiosity). Visitors see no controls; any click or key (except scroll keys) shows the finished page at once; reduced motion means no effect. No sound. A separate debug add-on (control bar, auto-scrolling tour, test hooks) exists for testing and recordings. Use when the user asks for a cursor swarm / agents rebuilding the page, a "Figma multiplayer building the site" intro, a "page builds itself" or "rebuild animation" effect, or mentions page-swarm-rebuild.
 ---
 
 # page-swarm-rebuild
@@ -37,9 +37,13 @@ and this file disagree, this file wins (product decisions were made after the de
 - **Visitors never see a control bar and never get an automatic scroll.** The bar and the tour live in the debug
   add-on, loaded only with `?rebuild-debug=1` or `debug: true`. `mode: 'tour'` without the add-on falls back to
   `scroll`.
-- **Always a way out without visible controls:** Esc, any other key (a lone Shift/Ctrl/Alt/Meta excepted) and any
-  click or tap show the finished page at once, with no animation and no layout shift. `prefers-reduced-motion` means
-  no effect at all (WCAG 2.2.2).
+- **Always a way out without visible controls:** Esc, Tab, Enter, any other key (a lone Shift/Ctrl/Alt/Meta
+  excepted) and any click or tap show the finished page at once, with no animation and no layout shift.
+  `prefers-reduced-motion` means no effect at all (WCAG 2.2.2).
+- **Scroll keys scroll:** Space, the arrows, Page Up / Down and Home / End (with the focus on the page itself, without
+  Ctrl / Alt / Meta) drive the build exactly like the mouse wheel. On a focused link, button or field, or with a
+  modifier, they end the effect like any other key. Tab, Enter and Esc always end it, so keyboard users reach the real
+  content (and its focus order) at their first Tab.
 - **The click that ends the effect never does something the visitor did not see:** if it lands on content that was not
   finished yet (hidden, or still being built), it is swallowed (`preventDefault` + `stopPropagation`, on mouse already at
   `pointerdown`, so no focus, no link, no button action). If it lands on finished content (visible, nothing inside it or
@@ -57,8 +61,41 @@ and this file disagree, this file wins (product decisions were made after the de
 | `fast` | 6x | Same as `scroll`, twice as fast. |
 | `tour` (debug only) | 1x | Auto-scroll as in the reference video: ~layers/7 seconds, the camera follows the work front, ends at the bottom with the ring of cursors. For recordings and side-by-side checks. `?rebuild-speed=6` gives the old "fast" (a 6x auto-scroll, ~9 s on the demo). Manual scrolling hands over to the visitor; the bar's `Tour` button resumes. |
 
-After the build the cursors form a ring around the largest visible image and the overlay disappears after `autoExit`
-seconds (3 s; with the debug add-on 6 s, never in tour mode).
+After the build the swarms gather around the focus element and the overlay disappears after `autoExit` seconds (3 s;
+with the debug add-on 6 s, never in tour mode).
+
+## Motion
+
+All of it is subtle by default and set with `motion` (see Configure); `?rebuild-motion=arc:0,...` switches parts off for
+A/B tests (debug add-on).
+
+- **Focus element** (`focus`): the opening and the finale swarm around it. Ask the developer (step 1). In each phase the
+  first of these that is at least half in view is used: the configured element(s), `[data-swarm-focus]`, `h1`, a main
+  button (`a.btn`, `.button`, `.cta`, `button[type=submit]` ...), the logo; then the largest picture in view; then a spot in
+  the view. So a focus far down the page (e.g. a closing call to action) serves the finale, and the opening uses the
+  main heading.
+- **Swarms:** free agents fly in 2-4 swarms of clearly different sizes (phones: 2). Every agent is pulled by a damped
+  spring towards its place in its swarm; the swarm centres move on an ellipse around the focus element whose radius
+  breathes and whose pace changes, so agents speed up and slow down by themselves and never run on a perfect circle.
+  The opening already starts in swarms (it lasts well under a second for visitors). While the page is built, idle
+  swarms glide between spots in view, mostly on the right.
+- **Finale:** a stiff, under-damped spring (damping 0.63, `motion.spring`) pulls every agent to the focus: fastest at
+  the start, about 5-20 % past its place, then back; after ~1 s the spring softens and the swarms circle slowly.
+- **Mouse** (opening and finale, desktop only; never on touch, never with reduced motion): an agent near the pointer
+  moves out of its way (harder when the pointer comes fast); up to 3 curious agents then follow it on a small circle,
+  1.3-2 s when it rests, shorter the faster it moves away (interest drains at `(1 + speed / 220 px/s)` times the base
+  rate). Never closer than 36 px (a hard limit, so the icons never overlap); the overlay ignores pointer events, so
+  clicks are never disturbed.
+- **Gravity:** an agent carries the element it works on, so its way there (and a carried clone copy) bends downwards:
+  sag = 0.2 x horizontal distance x weight x horizontality², weight = sqrt(area) / 320 px clamped to 0.2..1, at most
+  56 px and a fifth of the horizontal distance. A vertical move hardly bends. The way to a task also starts with the
+  agent's current velocity (cubic Hermite curve), so there are no sudden stops or turns.
+- **Difficulty:** every task's work (not the way there) is scaled by a difficulty from the element's area (for typing:
+  the box typed into): near the page average 2x the area ~ 1.6-1.8x the time, squashed (tanh) so the hardest task takes
+  at most ~4x the easiest. It is normalised (weighted by task length and difficulty, because parallel tasks make the
+  long ones set the pace) so the whole build takes as long as before; only the split between small and big changes.
+- **Lite** (`motion.lite: 'auto'`): on phones 2 swarms, no mouse play, a simpler wobble; when the frame rate stays
+  under 38 fps for two seconds during the build, also one trail ghost instead of three.
 
 ## Protection (the page is never left half hidden)
 
@@ -92,6 +129,11 @@ seconds (3 s; with the debug add-on 6 s, never in tour mode).
   fixed headers. `a[href^="tel:"]` and `position: fixed` elements are already shown instantly (also inside repeated
   rows); add others to `exclude` / `instant` or mark them `data-swarm-instant`.
 - Check whether the site has its own "reduce motion" switch; pass its selector as `motionOffSelector`.
+- **Ask the developer for the focus element** the swarms gather around at the start and the end: the logo, the main
+  heading or the main button (call to action). Suggest one from the page (usually the main call to action near the end
+  of the page for the finale, since the opening falls back to the main heading anyway) and, if there is no answer, use
+  the suggestion. Store it in the site's config as `focus: '<selector>'` (or `data-focus` on the script tag, or
+  `data-swarm-focus` on the element). Example: the demo uses `focus: '#reel'` ("Make it feel real").
 - Site-specific choices (an element to skip, a different section selector) go into the config of that site, never
   into the module.
 
@@ -113,7 +155,7 @@ seconds (3 s; with the debug add-on 6 s, never in tour mode).
 </body>
 ```
 (or omit `data-auto` and call `SwarmRebuild.start({ ... })` yourself). `data-auto` reads `data-mode`, `data-speed`,
-`data-agents`, `data-exclude`, `data-controls-position`, `data-debug`, `data-debug-src` and `data-once="false"`.
+`data-agents`, `data-exclude`, `data-controls-position`, `data-debug`, `data-debug-src`, `data-focus` and `data-once="false"`.
 The snippet text is also available at runtime as `SwarmRebuild.headSnippet()`. The debug add-on is fetched from the
 module's own URL with `-debug` added (`debugSrc` overrides). Working example: `tests/pages/dental/index.html`.
 
@@ -162,14 +204,18 @@ Working example: `tests/pages/nextjs/`.
 | `debugSrc` | next to the module | URL of `swarm-rebuild-debug.js` (script-tag installs) |
 | `controlsPosition` | `'right'` | debug bar: `'right'` \| `'left'` \| `'bottom'`; collapses to a thin tab when it would cover content; mobile: a small tab in a free corner |
 | `avoid` | `a[href^="tel:"],a[href^="mailto:"],button,[role="button"],input,select,textarea,[data-swarm-avoid]` | mobile debug tab never covers these (nor fixed elements and button-like links) |
+| `focus` | `null` (auto) | selector or element the opening / finale swarms gather around (see Motion); ask the developer |
+| `motion` | see below | merged key by key: `swarms` (true), `mouse` (true), `arc` (1 = gravity sag, 0 = straight), `difficulty` (1, 0 = all tasks alike), `spring` (1 = finale overshoot, 0 = none), `lite` (`'auto'` \| true \| false) |
 | `onDone` | `null` | callback `{elapsed, layers, agents}` or `{skipped: true, reason}` |
 
 URL parameters: `?rebuild=1` (force), `?rebuild=0` (off), `?rebuild-mode=scroll|fast|tour`, `?rebuild-debug=1`
 (debug add-on). With the debug add-on only: `?rebuild-speed=<n>`, `?rebuild-fault=task|stall|loop|die@<s>` (fault
-injection for tests), `?rebuild-hidden-max=<s>`.
+injection for tests), `?rebuild-hidden-max=<s>`, `?rebuild-motion=arc:0,difficulty:0,mouse:false,lite:true` (motion
+A/B), `?rebuild-focus=<selector>`.
 API: `SwarmRebuild.skip()`, `.goLive()`, `.replay()`, `.stop()`, `.state()` (`phase` scan / build / done, `loading`
 while the debug add-on is fetched, `idle` with `lastExit` after the end),
-`.stats()`, `.headSnippet()`, `.defaults`, `.version`; test hooks `._pause(on)`, `._probe()` (debug add-on).
+`.stats()`, `.headSnippet()`, `.defaults`, `.version`; test hooks `._pause(on)`, `._probe()` and `._motion()` (debug
+add-on: paths of all moves, work time of every task, agent positions, mouse follows).
 
 ### 4. Run and verify with Playwright
 Serve the site, then (Playwright must be installed in the project or globally: `npm i -D playwright && npx playwright install chromium`):
@@ -184,12 +230,17 @@ node $S/scripts/verify.cjs --url http://localhost:3000/ --mode tour --checks rec
 ```
 `--checks` (comma list): `record` (one recorded run in `--mode`), `extra` (reduced motion, debug ✕ and Replay, no-JS),
 `product` (no bar / no auto-scroll / add-on not loaded without the flag in all three modes, the flag shows the bar,
-default mode scroll, Esc / letter / Tab end the effect at once without layout shift while a lone Shift does not, a click
+default mode scroll, scroll keys scroll and drive the build, Esc / letter / Tab / Enter / Ctrl+arrow end the effect at
+once without layout shift while a lone Shift does not, a click
 or tap on unfinished content ends it without navigating, a click on finished content (`--interact`) works and ends it),
 `protect` (everything above the view final during fast scrolling, faults `task` / `stall` / `loop` / `die`, resize,
 background tab), `fixed` (pixel test: overlay shown vs. hidden, module paused, at ~17 moments of a visitor run, for every
-fixed and finished sticky element in view), `manual` (debug tour interrupted by wheel scrolling, then a scroll-mode run),
-`all` = record,extra,product,protect,fixed. `--interact "<selector>"` also clicks an element after the effect and
+fixed and finished sticky element in view), `motion` (opening swarms around the focus with changing speed and no
+perfect circle, the finale's spring pull with overshoot and slow circling, mouse play on desktop: dodge, never closer than
+36 px, shorter follows when the pointer leaves faster, moves do not end the effect; gravity sag of horizontal moves and
+none of vertical ones; difficulty: bigger parts take longer, at most ~4x; contact sheets `sheet-opening.jpg` /
+`sheet-finale.jpg`), `manual` (debug tour interrupted by wheel scrolling, then a scroll-mode run),
+`all` = record,extra,product,protect,fixed,motion. `--interact "<selector>"` also clicks an element after the effect and
 expects its text to change (e.g. a React counter). Every run has a hard time limit (`--timeout`, default 400 s).
 
 All checks must pass: run to the end, monotonic counters, auto-scroll ends at the bottom (tour), fps >= `--min-fps`
@@ -205,7 +256,7 @@ Compare with earlier numbers from the same machine (`scripts/bench-fps.cjs` comp
 ```bash
 node scripts/run-tests.cjs            # demo + dental + nextjs, desktop + mobile (~35 min, needs npm access for Next.js)
 node scripts/run-tests.cjs --quick --pages demo,dental --devices desktop
-node scripts/bench-fps.cjs --old-ref c332016   # fps of an older version (c332016 = 1.0.1) against the working copy
+node scripts/bench-fps.cjs --old-ref 5be439c   # fps + build time of an older version (5be439c = 1.1.0, c332016 = 1.0.1)
 ```
 Reference numbers on the demo, desktop 1440x900 (the developer's own machine, Nov 2026, module 1.0.0): fast (now
 `tour` at speed 6) 8.9 s / 59 fps / CLS 0.0007; tour 43.2 s, 27 agents / 59.6 fps / CLS 0.0021, scroll progress at
@@ -241,17 +292,19 @@ off (`?rebuild=0`, remove the snippet + script).
   unbuilt layers first; an agent far off screen enters from the nearest edge. Tour (debug): the camera keeps the lowest
   active layer in the lower third (base 0.09 viewport heights/s x speed, up to 3x when the next section's frames reach
   the bottom edge).
+- **Motion**: free agents = damped springs (semi-implicit Euler, sub-steps of 17 ms) towards places in swarms; task
+  agents follow their phase's curve; when a task lets an agent go, its measured velocity carries on (no stop).
 - **Every overlay element a task creates is recorded on the task**, so a failed, stuck or out-of-sight task can be
   completed and cleaned up on its own.
 - **Debug control bar**: fixed, moved with `transform` only (never a layout shift); repositions only when its spot
   gets covered by a fixed element (and on mobile by phone links / buttons). Its styles come with the add-on.
-- **Accessibility**: `prefers-reduced-motion` skips everything; Esc / any key / click shows the finished page
+- **Accessibility**: `prefers-reduced-motion` skips everything; Esc / Tab / Enter / any non-scroll key / click shows the finished page
   immediately; the overlay is `aria-hidden`. While the effect runs, content not yet built is also hidden from screen
   readers (it is `visibility: hidden`).
 
 ## Known limitations
-- Content not yet built is hidden from screen readers too (see above); any key ends the effect, so keyboard and
-  screen-reader users get the page at their first key press.
+- Content not yet built is hidden from screen readers too (see above); Tab, Enter, Esc and every other non-scroll key
+  end the effect, so keyboard and screen-reader users get the page at their first such key press.
 - Pages that scroll an inner container (not the window): the build follows the window only; use `fast` or exclude it.
 - The overlay is not drawn in the strip between a fixed element and the nearest viewport edge (e.g. along the bottom
   edge next to a floating button), so agents passing there disappear for a moment. Fixed elements that cover more than half of the viewport are not cut out (they are treated as

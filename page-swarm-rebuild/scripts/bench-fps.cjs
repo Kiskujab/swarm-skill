@@ -7,7 +7,7 @@
  *                              [--pages demo,dental] [--devices desktop,mobile] [--modes tour,tour6,scroll,fast]
  *                              [--reps 3] [--timeout 1800]
  *
- * Modes compared (old -> new):
+ * Modes compared (old -> new; an old version 1.1 or later is driven exactly like the new one):
  *   tour      auto-scroll at 1x                    old: mode tour     new: ?rebuild-debug=1, mode tour
  *   tour6     auto-scroll at 6x (the old "fast")   old: mode fast     new: ?rebuild-debug=1, mode tour, speed 6
  *   scroll    follows the visitor, 3x              old: mode scroll   new: mode scroll (no control bar)
@@ -16,7 +16,7 @@
  * statistics (frames during the build) are used; no screenshots are taken.
  *
  * The old version is read from git (--old-ref: a commit or tag, default c332016 = 1.0.1) or from a file (--old, with its .css next to it).
- * Results: a table on stdout and <os tmp>/page-swarm-rebuild-bench/bench.json.
+ * Results (frame rate, p95 frame time, build time): a table on stdout and <os tmp>/page-swarm-rebuild-bench/bench.json.
  */
 'use strict';
 const fs = require('fs');
@@ -46,14 +46,16 @@ function loadPlaywright() {
 // old module files into OUT/old/assets (the test pages are served from the current skill folder)
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(path.join(OUT, 'old'), { recursive: true });
-let oldJs, oldCss;
+let oldJs, oldCss, oldDbg = null;
 if (args.old) {
   oldJs = fs.readFileSync(path.resolve(String(args.old)), 'utf8');
   oldCss = fs.readFileSync(path.resolve(String(args.old)).replace(/\.js$/, '.css'), 'utf8');
+  try { oldDbg = fs.readFileSync(path.resolve(String(args.old)).replace(/\.js$/, '-debug.js'), 'utf8'); } catch (e) { /* 1.0.x: none */ }
 } else {
   const ref = String(args['old-ref'] || 'c332016'); // c332016 = module 1.0.1
   const git = (f) => execFileSync('git', ['show', ref + ':page-swarm-rebuild/assets/' + f], { cwd: SKILL, encoding: 'utf8', maxBuffer: 1 << 24 });
   oldJs = git('swarm-rebuild.js'); oldCss = git('swarm-rebuild.css');
+  try { oldDbg = git('swarm-rebuild-debug.js'); } catch (e) { /* 1.0.x: none */ }
 }
 const oldVersion = (/swarm-rebuild v([\d.]+)/.exec(oldJs) || [])[1] || '?';
 const newVersion = (/swarm-rebuild v([\d.]+)/.exec(fs.readFileSync(path.join(SKILL, 'assets', 'swarm-rebuild.js'), 'utf8')) || [])[1] || '?';
@@ -69,6 +71,7 @@ const server = http.createServer((req, res) => {
   if (fs.existsSync(f) && fs.statSync(f).isDirectory()) f = path.join(f, 'index.html');
   if (m[1] === 'old' && /assets\/swarm-rebuild\.js$/.test(m[2])) body = oldJs;
   if (m[1] === 'old' && /assets\/swarm-rebuild\.css$/.test(m[2])) body = oldCss;
+  if (m[1] === 'old' && oldDbg && /assets\/swarm-rebuild-debug\.js$/.test(m[2])) body = oldDbg;
   if (body == null && !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
   res.writeHead(200, { 'content-type': TYPES[path.extname(f)] || 'application/octet-stream', 'cache-control': 'no-store' });
   if (body != null) res.end(body); else fs.createReadStream(f).pipe(res);
@@ -81,6 +84,9 @@ const MODES = {
   scroll: { old: { 'rebuild-mode': 'scroll' }, new: { 'rebuild-mode': 'scroll' }, wheel: true },
   fast: { old: null, new: { 'rebuild-mode': 'fast' }, wheel: true }
 };
+
+// 1.1 and later: the same URL parameters as the current version
+if (oldDbg) Object.keys(MODES).forEach((k) => { MODES[k].old = MODES[k].new; });
 
 server.listen(0, '127.0.0.1', async () => {
   const base = 'http://127.0.0.1:' + server.address().port;
@@ -107,7 +113,7 @@ server.listen(0, '127.0.0.1', async () => {
     }
     const st = await pg.evaluate(() => window.SwarmRebuild.stats()).catch(() => null);
     await ctx.close();
-    return st ? { fps: st.avgFps, p95: st.p95FrameMs, frames: st.frames, elapsed: s.elapsed || null } : null;
+    return st ? { fps: st.avgFps, p95: st.p95FrameMs, frames: st.frames, elapsed: s.elapsed || st.elapsed || null } : null;
   }
   for (const device of DEVICES) {
     for (const page of PAGES) {
@@ -119,17 +125,18 @@ server.listen(0, '127.0.0.1', async () => {
         const avg = (a, f) => a.length ? +(a.reduce((s, x) => s + x[f], 0) / a.length).toFixed(1) : null;
         r.oldFps = avg(r.old, 'fps'); r.newFps = avg(r.new, 'fps'); r.oldP95 = avg(r.old, 'p95'); r.newP95 = avg(r.new, 'p95');
         r.oldRuns = r.old.map((x) => x.fps); r.newRuns = r.new.map((x) => x.fps);
+        r.oldTime = avg(r.old.filter((x) => x.elapsed), 'elapsed'); r.newTime = avg(r.new.filter((x) => x.elapsed), 'elapsed');
         rows.push(r);
-        console.log([device, page, mode, 'old', r.oldFps, JSON.stringify(r.oldRuns), 'new', r.newFps, JSON.stringify(r.newRuns), 'p95 ms', r.oldP95, '->', r.newP95].join(' '));
+        console.log([device, page, mode, 'old', r.oldFps, JSON.stringify(r.oldRuns), 'new', r.newFps, JSON.stringify(r.newRuns), 'p95 ms', r.oldP95, '->', r.newP95, 'time s', r.oldTime, '->', r.newTime].join(' '));
       }
     }
   }
   await browser.close();
   server.close();
   fs.writeFileSync(path.join(OUT, 'bench.json'), JSON.stringify({ oldVersion, newVersion, reps: REPS, rows }, null, 2));
-  console.log('\n| device | page | mode | v' + oldVersion + ' fps | v' + newVersion + ' fps | p95 frame ms old -> new |');
-  console.log('|---|---|---|---|---|---|');
-  rows.forEach((r) => console.log('| ' + [r.device, r.page, r.mode, r.oldFps == null ? '—' : r.oldFps + ' (' + r.oldRuns.join(', ') + ')', r.newFps + ' (' + r.newRuns.join(', ') + ')', (r.oldP95 == null ? '—' : r.oldP95) + ' -> ' + r.newP95].join(' | ') + ' |'));
+  console.log('\n| device | page | mode | v' + oldVersion + ' fps | v' + newVersion + ' fps | p95 frame ms old -> new | build time s old -> new |');
+  console.log('|---|---|---|---|---|---|---|');
+  rows.forEach((r) => console.log('| ' + [r.device, r.page, r.mode, r.oldFps == null ? '—' : r.oldFps + ' (' + r.oldRuns.join(', ') + ')', r.newFps + ' (' + r.newRuns.join(', ') + ')', (r.oldP95 == null ? '—' : r.oldP95) + ' -> ' + r.newP95, (r.oldTime == null ? '—' : r.oldTime) + ' -> ' + r.newTime].join(' | ') + ' |'));
   console.log('\n' + path.join(OUT, 'bench.json'));
   clearTimeout(killer);
   process.exit(0);

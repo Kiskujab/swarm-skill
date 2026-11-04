@@ -8,7 +8,8 @@
  *   never covers fixed bars, phone links or buttons),
  * - the "tour" mode: an automatic scroll through the page at 1x (for recordings), started from the bar or
  *   with mode: 'tour'; the visitor's scrolling takes over,
- * - test hooks: SwarmRebuild._probe() and the ?rebuild-fault= / ?rebuild-speed= / ?rebuild-hidden-max= parameters.
+ * - test hooks: SwarmRebuild._probe(), SwarmRebuild._motion() and the ?rebuild-fault= / ?rebuild-speed= /
+ *   ?rebuild-hidden-max= / ?rebuild-motion= / ?rebuild-focus= parameters.
  */
 (function () {
   'use strict';
@@ -226,6 +227,16 @@
       setCollapsed(pref ? pref === 'collapsed' : st.mobile, false);
       hudUpdate(true);
       core.api._probe = probe;
+      // motion measurements: the path of every move (gravity sag), each task's work time, the mouse follows
+      core.api._motion = function (light) {
+        var s = st;
+        if (!s || !s.mlog) return null;
+        var ag = [];
+        s.agents.forEach(function (a) { if (a.active) ag.push({ x: Math.round(a.x), y: Math.round(a.y), tx: Math.round(a.tgx || a.x), ty: Math.round(a.tgy || a.y), sw: s.swarms.indexOf(a.swarm), task: !!a.task, mf: !!a.mf }); });
+        var out = { phase: s.phase, t: core.now() - s.t0, agents: ag, orbit: s.phase === 'done' ? s.finO : s.openO, follows: s.mz.follows, minD: s.mz.minD, dodges: s.mz.dodges };
+        if (!light) { out.moves = s.mlog.moves; out.tasks = s.mlog.tasks; }
+        return out;
+      };
     }
     function setCollapsed(c, byUser) {
       st.collapsed = c;
@@ -365,7 +376,7 @@
     // tour: the queue in reading order, never far below the camera
     function dispatch(t) {
       var idle = [];
-      for (var i = 0; i < st.agents.length; i++) { var a = st.agents[i]; if (a.active && !a.task && !a.scatter) idle.push(a); }
+      for (var i = 0; i < st.agents.length; i++) { var a = st.agents[i]; if (a.active && !a.task) idle.push(a); }
       while (st.qHead < st.queue.length && st.queue[st.qHead].state === 'done') st.qHead++;
       var looked = 0;
       for (var k = st.qHead; k < st.queue.length && idle.length && looked < 14; k++) {
@@ -469,6 +480,7 @@
       bind: function (s, on) {
         on(window, 'wheel', stopTour, { passive: true });
         on(window, 'touchmove', stopTour, { passive: true });
+        on(window, 'keydown', function (e) { if (core.scrollKey(e)) stopTour(); }, true);
       },
       scanned: function () { measureGutter(); autoCollapse(); placeHud(true); },
       frame: function (s, t) {

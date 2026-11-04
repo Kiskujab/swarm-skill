@@ -4,7 +4,7 @@
  *
  *   node verify.cjs --url http://localhost:5500/ [--mode scroll|fast|tour] [--speed 6] [--out ./swarm-check]
  *                   [--device desktop|mobile] [--viewport 1440x900] [--fps 10]
- *                   [--checks all|record|extra|product|protect|fixed|manual (comma list)]
+ *                   [--checks all|record|extra|product|protect|fixed|motion|manual (comma list)]
  *                   [--interact "<selector>"] [--min-fps 50] [--timeout 400] [--video ref.mp4 --crop 930:500:90:690]
  *
  * --mode / --speed   the recorded run. scroll and fast are what visitors get (no control bar, the page follows
@@ -14,15 +14,20 @@
  *   record   one recorded run: timeline, final state, fps, console errors, instant elements
  *   extra    reduced motion, ✕ and Replay of the debug bar, no-JS
  *   product  what visitors get: no control bar / no auto-scroll without the flag, the flag shows the bar,
- *            default mode is scroll, Esc / any key / click / tap show the finished page at once without
+ *            default mode is scroll, scroll keys only scroll (the build follows), Esc / Tab / Enter / any other key /
+ *            click / tap show the finished page at once without
  *            layout shift, a click on unfinished content does not navigate, a click on finished content works
  *   protect  the page is never left half hidden: everything scrolled above the view is final; an exception
  *            in a task, a stuck task, an exception in the frame loop, a dead script (CSS dead-man switch),
  *            a resize and a background tab all end with the whole page visible
  *   fixed    the overlay never draws over position:fixed elements (and finished sticky ones): pixel test
  *            at many moments of a visitor run (overlay shown vs. hidden, the module paused)
+ *   motion   the motion (debug add-on measurements): opening swarms around the focus element with changing speed,
+ *            the finale's spring-like pull (overshoot) and slow circling, mouse play (dodge, follow shorter when the
+ *            pointer leaves faster, never closer than 36 px, desktop only), gravity sag of horizontal moves (none for
+ *            vertical ones), task difficulty (bigger = longer, at most ~4x); contact sheets of the opening and finale
  *   manual   the visitor takes over: a debug tour interrupted by wheel scrolling, then a scroll-mode run
- *   all      record,extra,product,protect,fixed
+ *   all      record,extra,product,protect,fixed,motion
  *
  * Frame rate is measured in a separate run without screenshots. It depends on the machine: a cloud
  * container without a GPU reaches ~46-55 fps with the demo where a normal laptop reaches ~59, so lower
@@ -62,7 +67,7 @@ const MOBILE = args.device === 'mobile';
 const [VW, VH] = String(args.viewport || (MOBILE ? '390x844' : '1440x900')).split('x').map(Number);
 const FPS = Number(args.fps || 10);
 const CHECKS = new Set(String(args.checks || 'all').split(','));
-if (CHECKS.has('all')) ['record', 'extra', 'product', 'protect', 'fixed'].forEach((c) => CHECKS.add(c));
+if (CHECKS.has('all')) ['record', 'extra', 'product', 'protect', 'fixed', 'motion'].forEach((c) => CHECKS.add(c));
 const TIMEOUT_S = Number(args.timeout || 400);
 const MIN_FPS = Number(args['min-fps'] || 50);
 fs.mkdirSync(path.join(OUT, 'frames'), { recursive: true });
@@ -453,7 +458,30 @@ function fixedTargets() {
       await ctx.close();
     }
     // ---------- ways out: Esc, any key, click / tap; a lone modifier key does nothing
-    const exits = [['Escape', 'Esc'], ['a', 'a letter key'], ['Tab', 'Tab']];
+    // ---------- scroll keys (Space, arrows, Page Down / Up, End / Home) only scroll: the build follows, like with the wheel
+    {
+      const { ctx, page } = await openEffect('scroll', { after: 1.2 });
+      const s0 = await page.evaluate(STATE);
+      const y0 = await page.evaluate(() => scrollY);
+      const seq = ['PageDown', 'ArrowDown', 'ArrowDown', 'Space', 'Shift+Space', 'PageDown', 'End', 'Home', 'PageDown'];
+      const trail = [];
+      let alive = true;
+      for (const k of seq) {
+        await page.keyboard.press(k);
+        await page.waitForTimeout(450);
+        const x = await page.evaluate(() => ({ s: window.SwarmRebuild.state(), y: Math.round(scrollY) }));
+        trail.push(k + '→' + x.y);
+        if (x.s.phase !== 'build' && x.s.phase !== 'done') alive = false;
+      }
+      await page.waitForTimeout(1500);
+      const s1 = await page.evaluate(STATE);
+      const moved = trail.some((t) => +t.split('→')[1] > y0 + 100);
+      check('product: scroll keys (Space, arrows, Page Up/Down, Home/End) scroll and drive the build, they do not end it',
+        s0.phase === 'build' && alive && moved && (s1.phase === 'build' || s1.phase === 'done') && s1.layersDone > s0.layersDone,
+        trail.join(', ') + '; layers ' + s0.layersDone + ' -> ' + s1.layersDone + ', ' + s1.phase);
+      await ctx.close();
+    }
+    const exits = [['Escape', 'Esc'], ['a', 'a letter key'], ['Tab', 'Tab'], ['Enter', 'Enter'], ['Control+ArrowDown', 'Ctrl + arrow']];
     for (const [key, label] of exits) {
       const { ctx, page } = await openEffect('scroll', { after: 1.2 });
       const s0 = await page.evaluate(STATE);
@@ -690,6 +718,188 @@ function fixedTargets() {
       await ctx.close();
     }
   }
+  if (CHECKS.has('motion')) {
+    report.motion = {};
+    const med = (a) => { a = a.filter((x) => x != null && isFinite(x)).sort((x, y) => x - y); return a.length ? a[a.length >> 1] : null; };
+    const mean = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+    const r3 = (x) => x == null ? null : +x.toFixed(3);
+    // in the page: the motion of every frame for ms milliseconds (debug add-on)
+    const sample = (page, ms) => page.evaluate((ms) => new Promise((res) => {
+      const out = [], t0 = performance.now();
+      (function f() {
+        const R = window.SwarmRebuild, m = R && R._motion && R._motion(true);
+        if (m) out.push({ t: m.t, phase: m.phase, a: m.agents, o: m.orbit });
+        if (performance.now() - t0 < ms) requestAnimationFrame(f); else res(out);
+      })();
+    }), ms);
+    // per agent: positions over time -> speeds (px/s)
+    const speeds = (frames, i) => { const v = []; for (let k = 1; k < frames.length; k++) { const a = frames[k - 1].a[i], b = frames[k].a[i], dt = frames[k].t - frames[k - 1].t; if (a && b && dt > 0.004) v.push(Math.hypot(b.x - a.x, b.y - a.y) / dt); } return v; };
+    const cv = (v) => { const m = mean(v); if (!m) return 0; return Math.sqrt(mean(v.map((x) => (x - m) * (x - m)))) / m; };
+
+    // ---------- the opening: swarms around the focus element, speeds not constant, not a perfect circle
+    {
+      const { ctx, page, bag } = await openEffect('tour', { params: { 'rebuild-speed': SPEED || '6' }, waitBuild: false, waitUntil: 'commit' });
+      const fr = (await sample(page, 1400)).filter((f) => f.phase === 'scan');
+      const s = await page.evaluate(STATE);
+      const n = fr.length ? fr[0].a.length : 0;
+      const cvs = [], radial = [];
+      for (let i = 0; i < n; i++) cvs.push(cv(speeds(fr, i)));
+      fr.forEach((f) => { if (f.o) f.a.forEach((a) => radial.push(Math.hypot((a.x - f.o.x) / f.o.rx, (a.y - f.o.y) / f.o.ry))); });
+      const rm = mean(radial), rsd = rm ? Math.sqrt(mean(radial.map((x) => (x - rm) * (x - rm)))) : 0;
+      const sizes = s.swarms || [];
+      report.motion.opening = { frames: fr.length, agents: n, focus: s.focus && s.focus.open, swarms: sizes, speedCv: r3(med(cvs)), radialMean: r3(rm), radialSd: r3(rsd) };
+      check('motion: opening — swarms of different sizes around the focus element (' + ((s.focus && s.focus.open && (s.focus.open.el || s.focus.open.src)) || '?') + ')',
+        fr.length >= 8 && sizes.length >= (MOBILE ? 2 : 3) && new Set(sizes).size > 1 && rm > 0.5 && rm < 1.6,
+        fr.length + ' frames, swarms ' + JSON.stringify(sizes) + ', mean distance ' + r3(rm) + ' orbit radii');
+      check('motion: opening — speeds change (accelerate / slow down) and the path is not a perfect circle', med(cvs) > 0.15 && rsd > 0.1,
+        'speed variation (CV) ' + r3(med(cvs)) + ', spread of the distance to the focus ' + r3(rsd) + ' orbit radii');
+      check('motion: opening — no errors', !bag.length && !bag.fallbacks.length, (bag.concat(bag.fallbacks)).slice(0, 3).join(' | '));
+      await ctx.close();
+    }
+
+    // ---------- the finale: spring-like pull to the focus element (fast first, a little past it, back), then slow circling;
+    // mouse play (desktop); gravity sag and task difficulty from the same run
+    {
+      const { ctx, page, bag } = await openEffect('tour', { params: { 'rebuild-speed': SPEED || '6' } });
+      await page.waitForFunction(() => window.SwarmRebuild.state().phase === 'done', null, { timeout: 120000 }).catch(() => {});
+      const fr = await sample(page, 3200);
+      const s = await page.evaluate(STATE);
+      const T0 = fr.length ? fr[0].t : 0;
+      const over = [], peakAt = [], slow = [], gathered = [];
+      const n = fr.length ? fr[0].a.length : 0;
+      for (let i = 0; i < n; i++) {
+        const a0 = fr[0].a[i]; if (!a0) continue;
+        const D0 = Math.hypot(a0.tx - a0.x, a0.ty - a0.y);
+        const v = speeds(fr, i);
+        if (D0 > 150) {
+          // how far it went past its place (along the way it came), relative to the way
+          const ux = (a0.tx - a0.x) / D0, uy = (a0.ty - a0.y) / D0;
+          let e = -1e9;
+          fr.forEach((f) => { const a = f.a[i]; if (a && f.t - T0 < 1.5) e = Math.max(e, ((a.x - a.tx) * ux + (a.y - a.ty) * uy) / D0); });
+          over.push(e);
+          let pk = 0, pt = 0; v.forEach((x, k) => { if (x > pk) { pk = x; pt = fr[k + 1].t - T0; } });
+          peakAt.push(pt);
+          const late = v.filter((x, k) => fr[k + 1].t - T0 > 2);
+          slow.push(pk ? mean(late) / pk : null);
+        }
+      }
+      const last = fr[fr.length - 1];
+      if (last && last.o) last.a.forEach((a) => gathered.push(Math.hypot((a.x - last.o.x) / last.o.rx, (a.y - last.o.y) / last.o.ry) < 1.8));
+      const g = gathered.filter(Boolean).length / Math.max(1, gathered.length);
+      report.motion.finale = { frames: fr.length, focus: s.focus && s.focus.done, pulled: over.length, overshoot: r3(med(over)), peakSpeedAt: r3(med(peakAt)), lateToPeakSpeed: r3(med(slow)), gathered: r3(g) };
+      check('motion: finale — gathers around the focus element (' + ((s.focus && s.focus.done && (s.focus.done.el || s.focus.done.src)) || '?') + ')', g >= 0.8, Math.round(g * 100) + ' % of the agents within the orbit after 3 s');
+      check('motion: finale — pulled in like a damped spring: fast at first, a little past the target, then slow',
+        over.length === 0 || (med(over) > 0.02 && med(over) < 0.4 && med(peakAt) < 0.5 && med(slow) < 0.35),
+        over.length + ' agents pulled from > 150 px: overshoot ' + Math.round((med(over) || 0) * 100) + ' % of the way, top speed after ' + r3(med(peakAt)) + ' s, speed after 2 s ' + Math.round((med(slow) || 0) * 100) + ' % of the top');
+
+      // gravity: sag of horizontal moves, none for vertical ones (only moves that start from rest, so the carried-over
+      // velocity does not count), never more than the cap
+      const mo = await page.evaluate(() => window.SwarmRebuild._motion());
+      const mv = mo.moves.filter((r) => r.done && r.v0 < 5);
+      const hz = (r) => Math.abs(r.dx) / Math.hypot(r.dx, r.dy);
+      const H = mv.filter((r) => Math.abs(r.dx) > 150 && hz(r) > 0.85), V = mv.filter((r) => Math.abs(r.dy) > 150 && hz(r) < 0.3);
+      const Hh = H.filter((r) => r.w >= 0.5), Hl = H.filter((r) => r.w < 0.3);
+      const maxDev = Math.max(0, ...mv.map((r) => r.devY));
+      report.motion.gravity = { moves: mv.length, horizontal: H.length, vertical: V.length, sagHorizontal: r3(med(H.map((r) => r.devY / Math.abs(r.dx)))), sagHeavy: r3(med(Hh.map((r) => r.devY / Math.abs(r.dx)))), sagLight: r3(med(Hl.map((r) => r.devY / Math.abs(r.dx)))), sagVertical: r3(med(V.map((r) => r.devMax / Math.hypot(r.dx, r.dy)))), maxSagPx: maxDev, examples: H.slice(0, 4).map((r) => ({ dx: Math.round(r.dx), dy: Math.round(r.dy), weight: r.w, sagPx: r.devY })) };
+      const G = report.motion.gravity;
+      check('motion: gravity — horizontal moves bend downwards, vertical ones do not, capped at 56 px',
+        H.length >= 3 && G.sagHorizontal > 0.02 && (V.length === 0 || G.sagVertical < 0.01) && maxDev <= 58,
+        H.length + ' horizontal moves: sag ' + Math.round(G.sagHorizontal * 1000) / 10 + ' % of the distance (heavy ' + (G.sagHeavy == null ? '—' : Math.round(G.sagHeavy * 1000) / 10 + ' %') + ', light ' + (G.sagLight == null ? '—' : Math.round(G.sagLight * 1000) / 10 + ' %') + '); ' + V.length + ' vertical: ' + (G.sagVertical == null ? '—' : Math.round(G.sagVertical * 1000) / 10 + ' %') + '; largest ' + maxDev + ' px');
+      if (Hh.length >= 2 && Hl.length >= 2) check('motion: gravity — heavier elements bend more', G.sagHeavy > G.sagLight, 'heavy ' + G.sagHeavy + ' vs light ' + G.sagLight);
+
+      // difficulty: bigger parts take longer (at most ~4x), 2x area ~1.6-1.8x near the average
+      const tk = mo.tasks.filter((x) => !x.warp && x.type === 'build');
+      const rank = (a) => { const o = a.map((x, i) => [x, i]).sort((p, q) => p[0] - q[0]); const r = []; o.forEach((p, k) => { r[p[1]] = k; }); return r; };
+      const ra = rank(tk.map((x) => x.area)), rw = rank(tk.map((x) => x.work)), nn = tk.length;
+      const rho = nn > 3 ? 1 - 6 * ra.reduce((acc, x, i) => acc + (x - rw[i]) * (x - rw[i]), 0) / (nn * (nn * nn - 1)) : null;
+      const byArea = tk.slice().sort((p, q) => p.area - q.area), qn = Math.max(1, Math.floor(nn / 4));
+      const qRatio = nn >= 8 ? med(byArea.slice(-qn).map((x) => x.work)) / med(byArea.slice(0, qn).map((x) => x.work)) : null;
+      const dfs = mo.tasks.map((x) => x.df);
+      report.motion.difficulty = { tasks: nn, spearman: r3(rho), bigToSmallWork: r3(qRatio), dfMin: Math.min(...dfs), dfMax: Math.max(...dfs), range: s.diff };
+      check('motion: difficulty — bigger parts take longer, smaller ones less, at most ~4x apart',
+        nn >= 8 && rho > 0.4 && qRatio > 1.4 && Math.max(...dfs) / Math.min(...dfs) <= 4.05,
+        nn + ' tasks: rank correlation area ~ work ' + r3(rho) + ', biggest quarter takes ' + r3(qRatio) + 'x the smallest, difficulty ' + Math.min(...dfs) + '..' + Math.max(...dfs));
+
+      if (!MOBILE) {
+        // mouse: approach a swarm, rest, then move away slowly or fast. Dodge, follow for a while, never touch;
+        // the faster the pointer leaves, the shorter they follow
+        await page.waitForTimeout(800);
+        const trial = async (speed) => {
+          const m0 = await page.evaluate(() => window.SwarmRebuild._motion(true));
+          const sx = await page.evaluate(() => [scrollX, scrollY]);
+          const a = m0.agents[Math.floor(Math.random() * m0.agents.length)];
+          const ax = a.x - sx[0], ay = a.y - sx[1];
+          const cx = m0.orbit.x - sx[0], cy = m0.orbit.y - sx[1];
+          let ux = ax - cx, uy = ay - cy; const ul = Math.hypot(ux, uy) || 1; ux /= ul; uy /= ul; // outwards
+          const from = [Math.min(VW - 5, Math.max(5, ax + ux * 260)), Math.min(VH - 5, Math.max(5, ay + uy * 260))];
+          await page.mouse.move(from[0], from[1]);
+          const before = m0.follows.length;
+          for (let k = 1; k <= 12; k++) { await page.mouse.move(lerpN(from[0], ax, k / 12), lerpN(from[1], ay, k / 12)); await page.waitForTimeout(16); }
+          await page.waitForTimeout(450);
+          // away (away from the orbit centre, along the screen if needed)
+          let x = ax, y = ay, tEnd = Date.now() + (speed < 300 ? 2600 : 700);
+          let dx = ux, dy = uy; if (Math.abs(dx) < 0.2 && Math.abs(dy) < 0.2) { dx = 1; dy = 0; }
+          while (Date.now() < tEnd) {
+            x += dx * speed * 0.016; y += dy * speed * 0.016;
+            if (x < 5 || x > VW - 5) dx = -dx; if (y < 5 || y > VH - 5) dy = -dy;
+            x = Math.min(VW - 5, Math.max(5, x)); y = Math.min(VH - 5, Math.max(5, y));
+            await page.mouse.move(x, y); await page.waitForTimeout(16);
+          }
+          await page.waitForTimeout(1800);
+          const m1 = await page.evaluate(() => window.SwarmRebuild._motion(true));
+          // the pointer rests far away; agents that still follow give up by themselves
+          return m1.follows.slice(before).filter((f) => f.dur > 0.05);
+        };
+        const lerpN = (p, q, k) => p + (q - p) * k;
+        const slowF = [], fastF = [];
+        for (let k = 0; k < 3; k++) { slowF.push(...await trial(120)); await page.waitForTimeout(1500); fastF.push(...await trial(1300)); await page.waitForTimeout(1500); }
+        const m2 = await page.evaluate(() => window.SwarmRebuild._motion(true));
+        const s2 = await page.evaluate(STATE);
+        const ds = mean(slowF.map((f) => f.dur)), df = mean(fastF.map((f) => f.dur));
+        report.motion.mouse = { dodges: m2.dodges, minDistance: m2.minD, slow: { follows: slowF.length, avgDur: r3(ds) }, fast: { follows: fastF.length, avgDur: r3(df) } };
+        check('motion: mouse — agents dodge the pointer and never touch it (min. 36 px)', m2.dodges > 0 && m2.minD != null && m2.minD >= 35, m2.dodges + ' dodges, closest ' + m2.minD + ' px');
+        check('motion: mouse — they follow it for a moment; shorter when it moves away faster',
+          slowF.length >= 2 && fastF.length >= 2 && ds > df * 1.25,
+          'slow (120 px/s): ' + slowF.length + ' follows, avg ' + r3(ds) + ' s; fast (1300 px/s): ' + fastF.length + ' follows, avg ' + r3(df) + ' s');
+        check('motion: mouse — moving the pointer does not end the effect', s2.phase === 'done', s2.phase);
+        await page.mouse.click(5, VH - 5);
+        await page.waitForTimeout(300);
+        const s3 = await page.evaluate(STATE);
+        check('motion: mouse — a click afterwards still ends it', s3.phase === 'idle', s3.phase + ' ' + (s3.lastExit || ''));
+      } else {
+        check('motion: touch device — simpler motion, no mouse play', s.lite === true && s.mouseOn === false && (s.swarms || []).length <= 2, 'lite ' + s.lite + ', mouse ' + s.mouseOn + ', swarms ' + JSON.stringify(s.swarms));
+      }
+      check('motion: finale run — no errors', !bag.length && !bag.fallbacks.length, (bag.concat(bag.fallbacks)).slice(0, 3).join(' | '));
+      await ctx.close();
+    }
+
+    // ---------- contact sheets of the opening and the finale, as visitors see them (scroll mode)
+    try {
+      execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' });
+      const dir = path.join(OUT, 'motion');
+      fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
+      const ctx = await newCtx();
+      const page = await ctx.newPage();
+      await page.goto(effectUrl('scroll'), { waitUntil: 'commit' });
+      let i = 0; const t0 = Date.now();
+      while (Date.now() - t0 < 2200 && i < 16) { try { await page.screenshot({ path: path.join(dir, 'o' + String(i).padStart(2, '0') + '.png') }); i++; } catch (e) { await page.waitForTimeout(30); } }
+      await readDown(page, 0.5, 450, 90000);
+      i = 0; const t1 = Date.now();
+      while (Date.now() - t1 < 3000 && i < 16) { await page.screenshot({ path: path.join(dir, 'f' + String(i).padStart(2, '0') + '.png') }); i++; await page.waitForTimeout(110); }
+      await ctx.close();
+      const sheets = [];
+      for (const k of ['o', 'f']) {
+        const out = path.join(OUT, k === 'o' ? 'sheet-opening.jpg' : 'sheet-finale.jpg');
+        execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-pattern_type', 'glob', '-i', path.join(dir, k + '*.png'), '-vf', 'scale=' + (MOBILE ? 260 : 480) + ':-1,tile=4x4:padding=4:color=white', '-frames:v', '1', out], { timeout: 60000 });
+        sheets.push(out);
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+      report.motion.sheets = sheets;
+    } catch (e) {
+      console.log('(motion contact sheets skipped: ' + (e.message || e).toString().split('\n')[0] + ')');
+    }
+  }
+
   await browser.close();
   browser = null;
 

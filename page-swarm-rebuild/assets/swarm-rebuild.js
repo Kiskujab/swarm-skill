@@ -1,8 +1,11 @@
 /*!
- * swarm-rebuild v1.1.0
+ * swarm-rebuild v1.2.0
  * "The page rebuilds itself": a swarm of agent cursors re-creates an existing
  * page layer by layer (frames, typing, image reveals, clone-and-rewrite),
- * following the visitor's scrolling.
+ * following the visitor's scrolling. Free agents fly in swarms around a focus
+ * element (damped springs, no perfect circles), the way to a task bends with
+ * the weight of the element, bigger parts take longer, and on desktop agents
+ * dodge the mouse pointer and follow it for a moment.
  *
  * - No dependencies, no network requests (except the optional debug add-on,
  *   swarm-rebuild-debug.js, loaded only with ?rebuild-debug=1 or debug: true).
@@ -22,7 +25,7 @@
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   if (window.SwarmRebuild && window.SwarmRebuild.version) return;
 
-  var VERSION = '1.1.0';
+  var VERSION = '1.2.0';
   var LAYER = 'swarm-rebuild';
   var HIDE_ID = 'swarm-rebuild-hide';
   var REVEAL_ID = 'swarm-rebuild-reveal';
@@ -42,6 +45,16 @@
   var MODE_SPEED = { tour: 1, fast: 6, scroll: 3 };
   var LAYERS_PER_SEC = 7.1; // video: 364 layers in 51.4 s at 1x
   var MODKEY = { Shift: 1, Control: 1, Alt: 1, AltGraph: 1, Meta: 1, OS: 1, Super: 1, Hyper: 1, Fn: 1, FnLock: 1, CapsLock: 1, NumLock: 1, ScrollLock: 1, Symbol: 1, SymbolLock: 1, Dead: 1, Process: 1, Unidentified: 1 };
+  // keys that scroll the page: they drive the build like the mouse wheel (with focus on the page itself)
+  var SCROLLKEY = { ' ': 1, Spacebar: 1, ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1, Up: 1, Down: 1, Left: 1, Right: 1, PageUp: 1, PageDown: 1, Home: 1, End: 1 };
+  // motion
+  var ARC_K = 0.2;        // gravity: downward sag = ARC_K x horizontal distance x weight x horizontality^2 ...
+  var ARC_CAP = 56;       // ... at most this many px (and at most a fifth of the horizontal distance)
+  var ARC_REF = 320;      // px: an element with sqrt(area) >= this weighs 1 (small elements: at least ARC_MIN)
+  var ARC_MIN = 0.2;
+  var DIFF_EXP = 0.85;    // difficulty ~ area^0.85 near the page average (2x area -> ~1.6-1.8x the work) ...
+  var DIFF_SPAN = 1;      // ... squashed to 2^+-1: the hardest task takes at most ~4x the easiest
+  var MOUSE_MIN = 36;     // px: an agent never comes closer to the mouse pointer than this
   var ACTION = 'a[href],area[href],button,input,select,textarea,label,summary,details,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[role="checkbox"],[role="switch"],[onclick],[tabindex],[contenteditable=""],[contenteditable="true"]';
 
   var DEFAULTS = {
@@ -63,8 +76,19 @@
     debugSrc: null,          // URL of swarm-rebuild-debug.js; null = next to this file
     controlsPosition: 'right', // debug control bar: 'right' | 'left' | 'bottom' (mobile: a small tab near a free corner)
     avoid: 'a[href^="tel:"],a[href^="mailto:"],button,[role="button"],input,select,textarea,[data-swarm-avoid]', // debug bar on mobile never covers these
+    focus: null,             // CSS selector (or element) the opening and closing swarms gather around; null = auto
+                             // (the first one in view of: [data-swarm-focus], h1, a main button, the logo)
+    motion: null,            // fine-tuning of the motion, see MOTION (merged key by key)
     force: false,
     onDone: null
+  };
+  var MOTION = {
+    swarms: true,            // free agents move in small swarms of different sizes (false: one swarm)
+    mouse: true,             // opening / finale: agents dodge the mouse pointer and follow it for a moment (never on touch)
+    arc: 1,                  // gravity: horizontal moves bend downwards with the weight of the carried element (0 = straight)
+    difficulty: 1,           // bigger parts take longer, smaller ones less; the total stays the same (0 = all alike)
+    spring: 1,               // finale: overshoot of the pull towards the focus element (0 = none)
+    lite: 'auto'             // simpler motion: 'auto' (phones, and when the frame rate drops), true, false
   };
 
   // ---------------------------------------------------------------- helpers
@@ -372,7 +396,9 @@
     if (S || pending) return api;
     stopped = false;
     var q = params();
-    var o = assign({}, DEFAULTS, window.SwarmRebuildConfig, userOpts);
+    var cfg = window.SwarmRebuildConfig;
+    var o = assign({}, DEFAULTS, cfg, userOpts);
+    o.motion = assign({}, MOTION, cfg && cfg.motion, userOpts && userOpts.motion);
     if (q.get('rebuild-debug') === '1') o.debug = true;
     if (q.get('rebuild-mode')) o.mode = q.get('rebuild-mode');
     if (!MODE_SPEED[o.mode]) o.mode = DEFAULTS.mode;
@@ -381,6 +407,12 @@
       if (q.get('rebuild-speed')) o.speed = parseFloat(q.get('rebuild-speed')) || null;
       if (q.get('rebuild-fault')) o.fault = q.get('rebuild-fault');
       if (q.get('rebuild-hidden-max')) o.hiddenMax = parseFloat(q.get('rebuild-hidden-max'));
+      // motion settings for A/B tests: ?rebuild-motion=arc:0,difficulty:0,mouse:0,lite:1
+      (q.get('rebuild-motion') || '').split(',').forEach(function (kv) {
+        var m = /^(\w+):(.*)$/.exec(kv);
+        if (m && m[1] in MOTION) o.motion[m[1]] = m[2] === 'auto' ? 'auto' : m[2] === 'true' ? true : m[2] === 'false' ? false : parseFloat(m[2]);
+      });
+      if (q.get('rebuild-focus')) o.focus = q.get('rebuild-focus');
     }
     var force = o.force || q.get('rebuild') === '1';
     var skip = q.get('rebuild') === '0' || reducedMotion() || motionOff(o) || (typeof o.skipIf === 'function' && o.skipIf());
@@ -425,12 +457,20 @@
     if (o.debug && typeof factory === 'function') {
       try { st.dbg = factory(core, st); } catch (e) { warn('debug add-on failed', e); st.dbg = null; }
     }
+    if (st.dbg) st.mlog = { moves: [], tasks: [] }; // measurements for the tests (debug only)
     if (o.mode === 'tour' && !st.dbg) { warn('mode "tour" needs the debug add-on (?rebuild-debug=1); using "scroll"'); o.mode = 'scroll'; }
     st.touring = o.mode === 'tour';
     st.speedBase = o.speed || MODE_SPEED[o.mode];
     st.hiddenMax = o.hiddenMax != null && !isNaN(o.hiddenMax) ? o.hiddenMax : HIDDEN_MAX;
     st.mobile = window.innerWidth < 760 || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
     st.useRulers = o.rulers && !st.mobile;
+    // simpler motion on phones / when forced (and later when the frame rate drops, see tick)
+    st.lite = o.motion.lite === true || (o.motion.lite !== false && st.mobile);
+    st.mouseOn = !!o.motion.mouse && !st.lite && hoverMouse();
+    st.mz = { dodges: 0, follows: [], minD: null };
+    st.mfollow = 0;
+    st.focusCands = focusCands(o);
+    st.focusInfo = {};
     st.openScale = Math.min(st.speedBase, 3);
     st.scanDur = 0.85 / st.openScale;
     st.bg = pageBg();
@@ -500,12 +540,20 @@
     var vw = window.innerWidth, vh = window.innerHeight, sy = window.scrollY;
     for (var i = 0; i < st.maxAgents; i++) {
       var a = new Agent(st, i);
-      a.flock = i % 2;
-      a.off = [rand(-46, 46), rand(-34, 34)];
       a.wob = rand(0, 6.28);
-      a.x = vw / 2; a.y = sy + vh / 2;
       st.agents.push(a);
     }
+    makeSwarms(st);
+    // the opening is short (well under a second for visitors): the swarms are already circling the focus
+    // element when they appear, each agent near its place and moving along
+    var t = now(), F = focusAt(st, sy);
+    st.openO = orbitOf(st, F, sy); st.openAt = t + 0.5; st.focusInfo.open = focusLabel(F);
+    orbitSwarms(st, st.openO, t, 0, 1.5);
+    st.agents.forEach(function (a) {
+      var p = slot(a, t), s = a.swarm, v = 1.5 * s.sp * st.openO.rx * rand(0.6, 1);
+      a.x = p[0] + rand(-24, 24); a.y = p[1] + rand(-24, 24);
+      a.vx = -Math.sin(s.th) * v; a.vy = Math.cos(s.th) * v * st.openO.ry / st.openO.rx;
+    });
     st.activeAgents = Math.min(st.maxAgents, st.mobile ? 6 : 16);
     for (var j = 0; j < st.activeAgents; j++) st.agents[j].show(true);
   }
@@ -523,8 +571,20 @@
     on(window, 'keydown', function (e) {
       if (MODKEY[e.key] || e.isComposing) return;
       if (e.key !== 'Escape' && st.root.contains(e.target)) return; // keyboard use of the debug bar
+      if (scrollKey(e)) return; // the page scrolls: the build follows, like with the mouse wheel
       finishNow(st, 'key');
     }, true);
+    // the mouse pointer (never touch): free agents dodge it and follow it for a moment (opening / finale)
+    on(window, 'pointermove', function (e) {
+      if (e.pointerType !== 'mouse' || !st.mouseOn) return;
+      var m = st.mouse, tt = now();
+      if (m && !m.out) {
+        var h = Math.max(0.008, tt - m.t), k = Math.min(1, h / 0.05);
+        m.vx = lerp(m.vx, (e.clientX - m.cx) / h, k); m.vy = lerp(m.vy, (e.clientY - m.cy) / h, k);
+      } else m = st.mouse = { vx: 0, vy: 0 };
+      m.cx = e.clientX; m.cy = e.clientY; m.t = tt; m.out = false;
+    }, { passive: true, capture: true });
+    on(document, 'pointerout', function (e) { if (!e.relatedTarget && st.mouse) st.mouse.out = true; }, { passive: true, capture: true });
     on(window, 'pointerdown', function (e) {
       if (e.pointerType === 'touch') return; // may be the start of a scroll: a tap ends the effect on "click"
       if (st.root.contains(e.target)) return;
@@ -561,6 +621,15 @@
       });
       st.mo.observe(document.body, { childList: true, subtree: true });
     }
+  }
+  // Space, arrows, Page Up / Down, Home / End with the focus on the page itself (not in a field, on a link or a
+  // button, and without Ctrl / Alt / Meta) only scroll. Tab, Enter, Esc and all other keys end the effect, so
+  // keyboard users reach the content at once.
+  function scrollKey(e) {
+    if (!SCROLLKEY[e.key] || e.ctrlKey || e.metaKey || e.altKey) return false;
+    var tg = e.target;
+    if (!tg || tg === window || tg === document || tg === document.body || tg === document.documentElement) return true;
+    return !(tg.closest && tg.closest(ACTION));
   }
   function exitByPointer(st, e) {
     var tg = e.target && e.target.nodeType === 1 ? e.target : e.target && e.target.parentElement;
@@ -899,6 +968,7 @@
       if (idx < 0) q.push(item); else q.splice(idx + 1, 0, item);
     });
     st.queue = q;
+    difficulty(st, q);
     q.forEach(function (it) {
       var s = st.sections[it.section];
       if (!s) return;
@@ -914,6 +984,50 @@
     var units = q.filter(function (i) { return i.type !== 'block'; }).length;
     st.rate = units * LAYERS_PER_SEC / Math.max(1, total); // tasks per second at 1x
     st.nSections = Math.max(1, st.sections.length);
+  }
+
+  // Task difficulty from the area of the element (for typing: of the box typed into). Near the page average 2x the
+  // area is ~1.7x the work; it is squashed (tanh) so the hardest task takes at most ~4x the easiest, and normalised
+  // to an average of 1 so the whole build takes as long as before; only the split between small and big changes.
+  function difficulty(st, q) {
+    var k = Math.max(0, +st.o.motion.difficulty || 0), sum = 0, n = 0, ts = 0, tn = 0;
+    q.forEach(function (it) { it.la = Math.log(Math.max(64, carried(it))) / Math.LN2; sum += it.la; n++; });
+    var mean = n ? sum / n : 0, dsum = 0, bsum = 0;
+    q.forEach(function (it) {
+      var x = DIFF_EXP * k * (it.la - mean) / DIFF_SPAN, th = (Math.exp(2 * x) - 1) / (Math.exp(2 * x) + 1);
+      it.df = Math.pow(2, DIFF_SPAN * (isFinite(th) ? th : x > 0 ? 1 : -1));
+      // normalised with weights by the task's usual length and by its difficulty: tasks run side by side, so the
+      // build time follows the long ones; this keeps the build time as before (measured, see CHANGELOG 1.2.0)
+      var b = baseWork(it) * it.df;
+      dsum += it.df * b; bsum += b;
+    });
+    var norm = bsum ? dsum / bsum : 1;
+    q.forEach(function (it) {
+      it.df /= norm;
+      // typing time: the page average of the 1.1 timing (by letter count), so the total stays the same
+      if (it.type === 'build' && (it.L.kind === 'text' || it.L.kind === 'button')) {
+        var c = (it.L.el.textContent || '').length, cps = clamp(c * 0.9, 60, c > 160 ? 420 : 140);
+        ts += clamp(c / cps, 0.1, 1.3); tn += it.df;
+      }
+    });
+    st.typeBase = tn ? ts / tn : 0.5;
+    var ds = q.map(function (it) { return it.df; });
+    st.diff = { min: +Math.min.apply(null, ds.concat(1)).toFixed(3), max: +Math.max.apply(null, ds.concat(1)).toFixed(3), typeBase: +st.typeBase.toFixed(3) };
+  }
+
+  // rough work time of a task at 1x (s), as the phases in buildPhases / blockPhases / clonePhases set it
+  function baseWork(it) {
+    if (it.type === 'clone') { var n = it.g.members.length; return 0.3 + 0.42 + 0.05 * (n - 1) + 0.13 * n + 0.35; }
+    var L = it.L, big = L.w * L.h > 160000, drag = big ? 0.36 : L.kind === 'icon' ? 0.16 : 0.28;
+    if (it.type === 'block') return drag;
+    switch (L.kind) {
+      case 'text': return drag + 0.35 + (L.sub === 'heading' ? 0.28 : 0);
+      case 'media': return drag + 0.34;
+      case 'icon': return drag + 0.14;
+      case 'button': return drag + 0.4;
+      case 'line': return 0.36;
+      default: return drag + 0.12;
+    }
   }
 
   // ----------------------------------------------------------- reveal rules
@@ -1005,16 +1119,16 @@
     if (st.paused) return;
     if (st.fault) fireFault(st, t);
     if (st.dead) return;
-    if (st.phase === 'build') st.frames.push(dt);
+    if (st.phase === 'build') { st.frames.push(dt); liteWatch(st, dt); }
+    if (st.mouse && t - st.mouse.t > 0.05) { var mk2 = Math.exp(-dt * 10); st.mouse.vx *= mk2; st.mouse.vy *= mk2; }
     if (st.dirtySel) { st.dirtySel = false; rebuildReveals(st); }
     var vw = window.innerWidth, vh = window.innerHeight;
     if (st.dbg) st.dbg.frame(st, t); // reads layout before this frame's writes
     updateHoles(st, t, vw, vh);
 
     if (st.phase === 'scan') {
-      var ts = t - st.t0;
-      flock(st, ts, vw, vh);
-      if (ts >= st.scanDur && st.scanned) enterBuild(st, t);
+      openingStep(st, t, dt, vw, vh);
+      if (t - st.t0 >= st.scanDur && st.scanned) enterBuild(st, t);
     } else if (st.phase === 'build') {
       buildStep(st, t, dt, vw, vh);
     } else if (st.phase === 'done') {
@@ -1028,22 +1142,6 @@
     if (st.dbg) st.dbg.hud(st, false);
   }
 
-  function flock(st, ts, vw, vh) {
-    var sy = window.scrollY, cx = vw / 2, cy = vh / 2;
-    var R = Math.min(110, vw * 0.12), w = 2.4;
-    for (var i = 0; i < st.agents.length; i++) {
-      var a = st.agents[i];
-      if (!a.active) continue;
-      var ph = a.flock ? Math.PI : 0;
-      var ang = w * ts + ph - Math.PI / 2;
-      var fx = cx + Math.cos(ang) * R * 1.25, fy = cy + Math.sin(ang) * R * 0.8;
-      var wob = Math.sin(ts * 5 + a.wob) * 6;
-      a.x = fx + a.off[0] + wob;
-      a.y = sy + fy + a.off[1] + Math.cos(ts * 4 + a.wob) * 5;
-      a.setMode('arrow');
-    }
-  }
-
   function enterBuild(st, t) {
     var vw = window.innerWidth, vh = window.innerHeight, sy = window.scrollY;
     st.phase = 'build';
@@ -1054,13 +1152,11 @@
     var startN = Math.min(st.startAgents, st.agents.length);
     st.agents.forEach(function (a, i) { if (i >= startN && a.active) a.show(false); if (i < startN && !a.active) { a.show(true); a.x = vw / 2; a.y = sy + vh / 2; } });
     st.activeAgents = startN;
-    // scatter to the left / right edges
+    // the swarms leave the focus element and wander off to where the work is; the first tasks start shortly after
     var os = st.openScale;
-    st.agents.forEach(function (a) {
-      if (!a.active) return;
-      var left = a.x < vw / 2;
-      a.scatter = { fx: a.x, fy: a.y, tx: left ? rand(24, 150) : rand(vw - 150, vw - 24), ty: sy + rand(vh * 0.08, vh * 0.88), t0: t, d: 0.2 / os };
-    });
+    st.swarms.forEach(function (sw) { sw.vx = sw.vy = 0; sw.ax = null; });
+    st.agents.forEach(function (a) { a.mf = null; });
+    st.mfollow = 0;
     st.dispatchAt = t + 0.2 / os;
     if (st.useRulers) st.rulersUntil = t + 1.45 / os;
     st.sectionOpen = [];
@@ -1075,7 +1171,7 @@
       var a = st.agents[st.activeAgents++];
       a.show(true);
       a.x = vw + 30; a.y = sy + rand(vh * 0.2, vh * 0.8);
-      a.next = 0;
+      a.vx = -rand(250, 600); a.vy = rand(-120, 120); a.px = a.x; a.py = a.y;
     }
   }
 
@@ -1091,13 +1187,7 @@
 
   function buildStep(st, t, dt, vw, vh) {
     var sp = st.speedBase * st.mult;
-    // scatter animation at the start
-    st.agents.forEach(function (a) {
-      if (!a.scatter) return;
-      var p = clamp((t - a.scatter.t0) / a.scatter.d, 0, 1), e = easeOut(p);
-      if (!a.task) { a.x = lerp(a.scatter.fx, a.scatter.tx, e); a.y = lerp(a.scatter.fy, a.scatter.ty, e); a.setMode(p > 0.6 ? 'cross' : 'arrow'); }
-      if (p >= 1) { a.scatter = null; a.next = t + rand(0.2, 1.2); }
-    });
+    wanderSwarms(st, t, dt, vw, vh);
     var sy = window.scrollY, cut = sy - Math.max(40, vh * ABOVE);
     // everything that scrolled above the view is finished at once (no animation), its agents are free again
     sweepAbove(st, cut);
@@ -1169,7 +1259,7 @@
   function dispatchFollow(st, t) {
     var sy = window.scrollY, vh = window.innerHeight, lim = sy + vh * (1 + AHEAD);
     var idle = [];
-    for (var i = 0; i < st.agents.length; i++) { var a = st.agents[i]; if (a.active && !a.task && !a.scatter) idle.push(a); }
+    for (var i = 0; i < st.agents.length; i++) { var a = st.agents[i]; if (a.active && !a.task) idle.push(a); }
     while (st.qHead < st.queue.length && st.queue[st.qHead].state === 'done') st.qHead++;
     var stamp = (st.stamp = (st.stamp || 0) + 1), cands = [], visPend = 0, visMan = 0;
     function want(it, v, k) {
@@ -1215,7 +1305,7 @@
       }
       var ag = idle.splice(best, 1)[0];
       // an agent far off screen enters from the nearest edge (shortest way in)
-      if (ag.y < sy - 80 || ag.y > sy + vh + 80) { ag.y = ag.y < sy ? sy - 30 : sy + vh + 30; ag.hist.length = 0; }
+      if (ag.y < sy - 80 || ag.y > sy + vh + 80) { ag.y = ag.py = ag.y < sy ? sy - 30 : sy + vh + 30; ag.vy = 0; ag.hist.length = 0; }
       var ahead = (itemBox(it2).y - (sy + vh)) / vh;
       if (ahead > st.maxAhead) st.maxAhead = ahead;
       startTask(st, it2, ag, t, idle, cd.v ? boost : 1);
@@ -1298,7 +1388,6 @@
     if (!a || !a.task) return;
     a.task = null;
     a.setMode('arrow');
-    a.next = 0;
   }
 
   // ------------------------------------------------------------------ tasks
@@ -1311,7 +1400,11 @@
     var t = tk.clock, guard = 0;
     while (guard++ < 12) {
       var ph = tk.phases[tk.pi];
-      if (!ph) { tk.finished = true; return; }
+      if (!ph) {
+        tk.finished = true;
+        if (st.mlog && tk.w0 != null) logTask(st, tk, t);
+        return;
+      }
       if (!tk.pStarted) { tk.pStarted = true; tk.pt0 = tk.pt0 || t; if (ph.start) ph.start(tk, t); }
       var p = ph.d > 0 ? (t - tk.pt0) / ph.d : 1;
       if (p < 1) { if (ph.tick) ph.tick(tk, Math.max(0, p), t); return; }
@@ -1319,7 +1412,29 @@
       if (ph.end) ph.end(tk, t);
       tk.pi++; tk.pStarted = false; tk.pt0 = tk.pt0 + Math.max(0, ph.d);
       if (tk.pt0 < t - 0.25) tk.pt0 = t; // never fast-forward through more than a short hitch
+      if (tk.pi === 1) tk.w0 = tk.pt0;   // the way there is over, the work starts
     }
+  }
+  // test measurements (debug only): the path of every move, and how long each task's work took
+  function motionRec(st, k, x0, y0, x1, y1, area, sag, v0) {
+    var r = { k: k, x0: x0, y0: y0, dx: x1 - x0, dy: y1 - y0, w: +clamp(Math.sqrt(Math.max(0, area)) / ARC_REF, ARC_MIN, 1).toFixed(3), sag: +sag.toFixed(1), v0: Math.round(v0), devY: 0, devMax: 0, done: false };
+    st.mlog.moves.push(r);
+    if (st.mlog.moves.length > 600) st.mlog.moves.shift();
+    return r;
+  }
+  function motionPt(r, x, y, p) {
+    var px = x - r.x0, py = y - r.y0, d2 = r.dx * r.dx + r.dy * r.dy;
+    if (d2 < 1) return;
+    var u = (px * r.dx + py * r.dy) / d2, ox = px - u * r.dx, oy = py - u * r.dy;
+    if (oy > r.devY) r.devY = +oy.toFixed(1);
+    var m = Math.hypot(ox, oy);
+    if (m > r.devMax) r.devMax = +m.toFixed(1);
+    if (p >= 1) r.done = true;
+  }
+  function logTask(st, tk, t) {
+    var it = tk.it;
+    st.mlog.tasks.push({ type: it.type, kind: it.L ? it.L.kind : 'clone', area: Math.round(carried(it)), df: +tk.df.toFixed(3), work: +((t - tk.w0) * tk.mv).toFixed(3), warp: !!tk.warp });
+    if (st.mlog.tasks.length > 1500) st.mlog.tasks.shift();
   }
   function startTask(st, it, a, t, idle, boost) {
     // measurement: time from "came into view empty" to "work started" (a clone group starts with its first item)
@@ -1330,6 +1445,8 @@
     });
     var sp = st.speedBase * st.mult * (boost || 1);
     var tk = { it: it, agent: a, pi: 0, pStarted: false, pt0: 0, sp: sp, mv: Math.pow(sp, 0.7), guide: null, helpers: [], bag: [], wall0: t };
+    // the work itself (not the way there) takes longer the harder the task is
+    tk.df = it.df || 1; tk.mw = tk.mv / tk.df; tk.sw = sp / tk.df;
     try {
       if (it.type === 'block') tk.phases = blockPhases(st, tk, it.L);
       else if (it.type === 'clone') { tk.phases = clonePhases(st, tk, it.g, idle); }
@@ -1343,31 +1460,47 @@
     it.state = 'active';
     it.task = tk;
     a.task = tk;
-    a.scatter = null;
     st.active.push(tk);
     if (it.L) it.L.state = 'active';
     progress(st);
   }
+  // Gravity: the agent carries its element, so a horizontal move bends downwards; the heavier the element and the
+  // more horizontal the move, the more (a vertical move hardly bends). Returns the sag in px at the middle.
+  function sagFor(st, dx, dy, area) {
+    var k = +st.o.motion.arc || 0, adx = Math.abs(dx), dist = Math.hypot(dx, dy);
+    if (!k || dist < 8) return 0;
+    var hz = adx / dist, wgt = clamp(Math.sqrt(Math.max(0, area)) / ARC_REF, ARC_MIN, 1);
+    return Math.min(ARC_K * k * adx * wgt * hz * hz, ARC_CAP * k, adx * 0.2);
+  }
+  function carried(it) { return it.L ? it.L.w * it.L.h : it.g ? it.g.master.R.w * it.g.master.R.h : 0; }
+  // the way to a task: a curve that starts with the agent's current velocity (no sudden stop or turn), ends at
+  // rest, and sags with the weight of the element (cubic Hermite + a quadratic sag)
   function travel(st, tk, x, y, mode) {
     return {
       d: 0,
       start: function () {
-        var a = tk.agent;
+        var a = tk.agent, dx = x - a.x, dy = y - a.y, dist = Math.hypot(dx, dy);
         tk.fx = a.x; tk.fy = a.y;
-        var dist = Math.hypot(x - a.x, y - a.y);
-        this.d = clamp(0.1 + dist / 1900, 0.14, 0.62) / tk.mv;
+        var D = this.d = clamp(0.1 + dist / 1900, 0.14, 0.62) / tk.mv;
+        var mx = (a.vx || 0) * D, my = (a.vy || 0) * D, mm = Math.hypot(mx, my), lim = Math.min(160, dist * 0.5 + 30);
+        if (mm > lim) { mx *= lim / mm; my *= lim / mm; }
+        tk.m0x = mx; tk.m0y = my;
+        tk.sag = sagFor(st, dx, dy, carried(tk.it));
+        if (st.mlog) tk.mv0 = motionRec(st, 'travel', tk.fx, tk.fy, x, y, carried(tk.it), tk.sag, mm);
         a.setMode(mode || 'arrow');
       },
       tick: function (tk2, p) {
-        var e = easeInOut(p), a = tk.agent;
-        a.x = lerp(tk.fx, x, e); a.y = lerp(tk.fy, y, e);
+        var a = tk.agent, p2 = p * p, p3 = p2 * p, h01 = 3 * p2 - 2 * p3, h10 = p3 - 2 * p2 + p;
+        a.x = tk.fx + (x - tk.fx) * h01 + tk.m0x * h10;
+        a.y = tk.fy + (y - tk.fy) * h01 + tk.m0y * h10 + 4 * tk.sag * h01 * (1 - h01);
+        if (tk.mv0) motionPt(tk.mv0, a.x, a.y, p);
       }
     };
   }
   function drag(st, tk, L, withPh, scale) {
     var s = scale || 1;
     return {
-      d: (L.w * L.h > 160000 ? 0.36 : L.kind === 'icon' ? 0.16 : 0.28) / tk.mv,
+      d: (L.w * L.h > 160000 ? 0.36 : L.kind === 'icon' ? 0.16 : 0.28) / tk.mw,
       start: function () {
         tk.sel = new Sel(st);
         tk.guide = L;
@@ -1409,8 +1542,8 @@
         if (scale !== 1) tk.proxy.el.style.transform = 'scale(' + scale + ')';
         if (fromPh && tk.ph) { tk.ph.remove(); tk.ph = null; }
         chars = tk.proxy.typer.total;
-        var cps = clamp(chars * 0.9, 60, chars > 160 ? 420 : 140);
-        this.d = clamp(chars / cps, 0.1, 1.3) / tk.sp;
+        // how long typing takes depends on the size of the box (the task's difficulty), not on the letters
+        this.d = st.typeBase / tk.sw;
         tk.agent.setMode('ibeam');
         tk.guide = null;
       },
@@ -1428,7 +1561,7 @@
       // frame already drawn during blocking: select it, then fill
       ph.push(travel(st, tk, L.x, L.y));
       ph.push({
-        d: 0.1 / tk.mv,
+        d: 0.1 / tk.mw,
         start: function () {
           tk.sel = L.sel || new Sel(st); L.sel = null;
           tk.sel.set(L.x, L.y, L.w, L.h); tk.guide = L; tk.ph = L.ph || (k !== 'text' ? new Ph(st, k === 'media' || k === 'icon') : null); L.ph = null;
@@ -1445,12 +1578,12 @@
     if (k === 'text') {
       var heading = L.sub === 'heading';
       var s = heading ? 0.42 : 1;
-      if (L.blocked && heading) ph.push({ d: 0.12 / tk.mv, tick: function (tk2, p) { var sc = lerp(1, s, easeInOut(p)); tk.sel.set(L.x, L.y, L.w * sc, L.h * sc); } });
+      if (L.blocked && heading) ph.push({ d: 0.12 / tk.mw, tick: function (tk2, p) { var sc = lerp(1, s, easeInOut(p)); tk.sel.set(L.x, L.y, L.w * sc, L.h * sc); } });
       else if (!L.blocked) ph.push(drag(st, tk, L, false, s));
       ph.push(typePhase(st, tk, L, s, false));
       if (heading) {
         ph.push({
-          d: 0.28 / tk.mv,
+          d: 0.28 / tk.mw,
           start: function () { tk.agent.setMode('cross'); tk.guide = L; },
           tick: function (tk2, p) {
             var e = easeInOut(p), sc = lerp(s, 1, e);
@@ -1464,7 +1597,7 @@
     } else if (k === 'media' || k === 'icon') {
       if (!L.blocked) ph.push(drag(st, tk, L, true));
       ph.push({
-        d: (k === 'icon' ? 0.14 : 0.34) / tk.mv,
+        d: (k === 'icon' ? 0.14 : 0.34) / tk.mw,
         start: function () {
           revealEl(st, L.el, L.tree);
           tk.ph.el.classList.add('sr-fill');
@@ -1482,20 +1615,20 @@
       if (!L.blocked) ph.push(drag(st, tk, L, true));
       if (k === 'box' && !L.bg) ph[ph.length - 1].outline = true;
       ph.push({
-        d: 0.12 / tk.mv,
+        d: 0.12 / tk.mw,
         start: function () { revealEl(st, L.el, L.tree); tk.ph.el.classList.add('sr-fade'); },
         tick: function (tk2, p) { tk.ph.el.style.opacity = String(1 - p); }
       });
       ph.push(settleText(st, tk, L));
     } else if (k === 'button') {
       if (!L.blocked) ph.push(drag(st, tk, L, true));
-      ph.push({ d: 0.05 / tk.mv });              // placeholder -> final colour
+      ph.push({ d: 0.05 / tk.mw });              // placeholder -> final colour
 
       ph.push(typePhase(st, tk, L, 1, true));
       ph.push(settleText(st, tk, L));
     } else if (k === 'line') {
       ph.push({
-        d: 0.36 / tk.mv,
+        d: 0.36 / tk.mw,
         start: function () {
           tk.line = mk('div', 'sr-bline' + (L.vertical ? ' sr-v' : ''), st.world);
           tk.line.style.transform = 'translate3d(' + L.x + 'px,' + L.y + 'px,0)';
@@ -1538,7 +1671,7 @@
     var M = g.master.R, members = g.members.filter(function (m) { return !m.done; }), n = members.length;
     var copies = [], sels = [], lines = [];
     tk.cl = { members: members, copies: copies, sels: sels, lines: lines };
-    var slideD = (0.42 + 0.05 * (n - 1)) / tk.mv;
+    var slideD = (0.42 + 0.05 * (n - 1)) / tk.mw;
     // helpers ride along with the copies
     while (tk.helpers.length < Math.min(3, n) && idle && idle.length) {
       var hlp = idle.shift(); hlp.task = tk; tk.helpers.push(hlp);
@@ -1552,7 +1685,7 @@
     return [
       travel(st, tk, M.x, M.y),
       {
-        d: 0.16 / tk.mv,
+        d: 0.16 / tk.mw,
         start: function () {
           tk.sel = new Sel(st, true);
           tk.sel.set(M.x, M.y, M.w, M.h);
@@ -1577,13 +1710,18 @@
       },
       {
         d: slideD,
-        start: function () { tk.sel.out(); tk.sel = null; },
+        start: function () {
+          tk.sel.out(); tk.sel = null;
+          tk.cl.sag = members.map(function (m) { return sagFor(st, m.R.x - M.x, m.R.y - M.y, m.R.w * m.R.h); });
+          if (st.mlog) tk.cl.rec = members.map(function (m, i) { return motionRec(st, 'carry', M.x, M.y, m.R.x, m.R.y, m.R.w * m.R.h, tk.cl.sag[i], 0); });
+        },
         tick: function (tk2, p) {
-          var T = p * slideD * tk.mv;
+          var T = p * slideD * tk.mw;
           members.forEach(function (m, i) {
             if (m.done) return;
-            var q = clamp((T - i * 0.05) / 0.42, 0, 1), e = easeInOut(q);
-            var x = lerp(M.x, m.R.x, e), y = lerp(M.y, m.R.y, e);
+            var q = clamp((T - i * 0.05) / 0.42, 0, 1), e = easeInOut(q), sg = 4 * tk.cl.sag[i];
+            var x = lerp(M.x, m.R.x, e), y = lerp(M.y, m.R.y, e) + sg * e * (1 - e);
+            if (tk.cl.rec) motionPt(tk.cl.rec[i], x, y, q);
             var sx = lerp(1, m.R.w / M.w, e), sy = lerp(1, m.R.h / M.h, e);
             var cs = copies[i].el.style;
             cs.transform = 'translate(' + (x - M.x) + 'px,' + (y - M.y) + 'px) scale(' + sx + ',' + sy + ')';
@@ -1594,7 +1732,7 @@
             for (var k = 0; k < 2; k++) {
               var qq = clamp((T - i * 0.05 - (k + 1) * 0.05) / 0.42, 0, 1), ee = easeInOut(qq);
               var gs = gh[k].style;
-              gs.transform = 'translate3d(' + lerp(M.x, m.R.x, ee) + 'px,' + lerp(M.y, m.R.y, ee) + 'px,0)';
+              gs.transform = 'translate3d(' + lerp(M.x, m.R.x, ee) + 'px,' + (lerp(M.y, m.R.y, ee) + sg * ee * (1 - ee)) + 'px,0)';
               gs.width = M.w + 'px'; gs.height = M.h + 'px';
               gs.opacity = q > 0 && q < 1 ? String(0.45 - k * 0.2) : '0';
             }
@@ -1609,7 +1747,7 @@
         }
       },
       {
-        d: 0.14 / tk.mv,
+        d: 0.14 / tk.mw,
         start: function () {
           members.forEach(function (m) { var s = null; if (!m.done) { s = new Sel(st); s.set(m.R.x, m.R.y, m.R.w, m.R.h); } sels.push(s); });
           tk.helpers.forEach(function (h) { release(st, h); });
@@ -1617,7 +1755,7 @@
         }
       },
       {
-        d: rwTotal / tk.mv,
+        d: rwTotal / tk.mw,
         start: function () { tk.mp = []; tk.agent.setMode('ibeam'); },
         tick: function (tk2, p) {
           var T = p * rwTotal;
@@ -1711,34 +1849,221 @@
   }
 
   // ---------------------------------------------------------------- agents
-  function idleMove(st, a, t, dt, vw, vh) {
-    var sy = window.scrollY;
-    var off = a.y < sy - 40 || a.y > sy + vh + 40;
-    if (t > a.next || off || st.flip) {
-      a.next = t + rand(2, 4);
-      var right = Math.random() < 0.65;
-      a.tx = right ? rand(vw * 0.58, vw * 0.96) : rand(vw * 0.05, vw * 0.95);
-      a.ty = rand(vh * 0.1, vh * 0.82);
+  // ---------------------------------------------------------------- motion
+  // Free agents (opening, waiting for work, finale) are moved by damped springs towards targets that drift, so
+  // they speed up and slow down by themselves and never run on a perfect circle. They fly in a few swarms of
+  // different sizes. Agents at work follow their task's path (with a gravity sag, see travel()).
+  function hoverMouse() { try { return window.matchMedia('(hover: hover) and (pointer: fine)').matches; } catch (e) { return false; } }
+  // a damped spring pulls o (x, y, vx, vy) towards (tx, ty); w = stiffness (rad/s), z = damping ratio (< 1 overshoots)
+  function springTo(o, tx, ty, dt, w, z, vmax) {
+    var n = dt > 0.017 ? Math.ceil(dt / 0.017) : 1, h = dt / n, w2 = w * w, c = 2 * z * w;
+    for (var i = 0; i < n; i++) {
+      o.vx += ((tx - o.x) * w2 - o.vx * c) * h;
+      o.vy += ((ty - o.y) * w2 - o.vy * c) * h;
+      var v = Math.hypot(o.vx, o.vy);
+      if (v > vmax) { o.vx *= vmax / v; o.vy *= vmax / v; }
+      o.x += o.vx * h; o.y += o.vy * h;
     }
-    var tx = a.tx, ty = sy + a.ty;
-    var dx = tx - a.x, dy = ty - a.y, d = Math.hypot(dx, dy) || 1;
-    var spd = off ? 900 : d > 300 ? 260 : 46;
-    var vx = dx / d * spd, vy = dy / d * spd;
-    var k = 1 - Math.exp(-dt * (off ? 6 : 1.6));
-    a.vx = lerp(a.vx, vx, k); a.vy = lerp(a.vy, vy, k);
-    if (d < 4) { a.vx *= 0.9; a.vy *= 0.9; }
-    a.x += a.vx * dt; a.y += a.vy * dt;
-    a.setMode('arrow');
   }
-  function renderAgents(st, t, dt) {
-    var vw = window.innerWidth, vh = window.innerHeight, sy = window.scrollY, sx = window.scrollX;
-    if (st.phase === 'build') {
-      if (!st.flipAt || t > st.flipAt) { st.flip = !!st.flipAt; st.flipAt = t + rand(3, 5); } else st.flip = false;
+  function makeSwarms(st) {
+    var k = !st.o.motion.swarms ? 1 : st.lite ? 2 : st.agents.length >= 14 ? 4 : 3;
+    st.swarms = [];
+    for (var i = 0; i < k; i++) {
+      st.swarms.push({
+        // sizes: clearly different (about k : k-1 : ... : 1, with some chance)
+        w: k === 1 ? 1 : Math.pow(k - i, 1.2) + rand(-0.2, 0.3), n: 0, th: (i / k) * Math.PI * 2 + rand(-0.5, 0.5),
+        sp: rand(0.7, 1.3), rf: rand(0.78, 1.22), fx: rand(0.85, 1.15), fy: rand(0.85, 1.15), n1: rand(0, 6.28), n2: rand(0, 6.28), n3: rand(0, 6.28),
+        x: 0, y: 0, vx: 0, vy: 0, ax: null, ay: 0, next: 0
+      });
     }
+    st.agents.forEach(function (a) { joinSwarm(st, a); });
+  }
+  // weighted round robin: the first n agents are spread over the swarms in proportion at every n
+  function joinSwarm(st, a) {
+    var best = st.swarms[0], bv = 1e9;
+    st.swarms.forEach(function (s) { var v = (s.n + 1) / s.w; if (v < bv) { bv = v; best = s; } });
+    best.n++;
+    a.swarm = best;
+    a.oR = rand(8, 14 + 7 * Math.sqrt(best.n)); a.oA = rand(0, 6.28); a.oW = rand(-0.8, 0.8);
+    a.kf = rand(0.8, 1.2);                       // own stiffness: some lag behind, some lead
+    a.T0 = rand(1.3, 2);                         // how long it stays curious about the mouse pointer
+    a.keep = rand(44, 60); a.mdir = Math.random() < 0.5 ? -1 : 1; a.mcool = 0; a.mf = null;
+  }
+  // the agent's place in its swarm
+  function slot(a, t) {
+    var s = a.swarm, ang = a.oA + t * a.oW;
+    return [s.x + Math.cos(ang) * a.oR + Math.sin(t * 1.7 + a.wob) * 5, s.y + Math.sin(ang) * a.oR * 0.8 + Math.cos(t * 1.3 + a.wob) * 4];
+  }
+  // swarms circling an orbit (an ellipse around the focus element) at their own, varying pace and distance
+  function orbitSwarms(st, O, t, dt, w) {
+    for (var i = 0; i < st.swarms.length; i++) {
+      var s = st.swarms[i];
+      s.th += dt * w * s.sp * (1 + 0.35 * Math.sin(t * 0.7 + s.n3));
+      var br = s.rf * (1 + 0.12 * Math.sin(t * 0.9 + s.n1) + (st.lite ? 0 : 0.07 * Math.sin(t * 2.3 + s.n2)));
+      s.x = O.x + Math.cos(s.th) * O.rx * br * s.fx;
+      s.y = O.y + Math.sin(s.th) * O.ry * br * s.fy;
+    }
+  }
+  // while the page is built: idle swarms glide between spots in view (mostly on the right), following the scroll
+  function wanderSwarms(st, t, dt, vw, vh) {
+    var sy = window.scrollY, sx = window.scrollX;
+    for (var i = 0; i < st.swarms.length; i++) {
+      var s = st.swarms[i];
+      if (s.ax == null || t > s.next) { s.next = t + rand(2.5, 5); s.ax = Math.random() < 0.65 ? rand(0.58, 0.92) : rand(0.08, 0.92); s.ay = rand(0.15, 0.8); }
+      if (s.y < sy - vh * 0.6 || s.y > sy + vh * 1.6) { s.y = s.y < sy ? sy - 40 : sy + vh + 40; s.vy = 0; }
+      springTo(s, sx + s.ax * vw, sy + s.ay * vh, dt, 1.7, 0.9, 900);
+    }
+  }
+  function openingStep(st, t, dt, vw, vh) {
+    var sy = window.scrollY;
+    if (!st.openO || t > st.openAt) {
+      st.openAt = t + 0.5;
+      var F = focusAt(st, sy);
+      st.openO = orbitOf(st, F, sy);
+      st.focusInfo.open = focusLabel(F);
+    }
+    orbitSwarms(st, st.openO, t, dt, 1.5);
     for (var i = 0; i < st.agents.length; i++) {
       var a = st.agents[i];
       if (!a.active) continue;
-      if (st.phase === 'build' && !a.task && !a.scatter) idleMove(st, a, t, dt, vw, vh);
+      var p = slot(a, t);
+      freeStep(st, a, t, dt, p[0], p[1], 5.5 * a.kf, 0.72, 1800);
+      a.setMode('arrow');
+    }
+  }
+  function idleStep(st, a, t, dt, vw, vh) {
+    var sy = window.scrollY;
+    if (a.y < sy - vh * 1.5 || a.y > sy + vh * 2.5) { a.y = a.py = a.y < sy ? sy - 30 : sy + vh + 30; a.vy *= 0.3; a.hist.length = 0; }
+    var p = slot(a, t);
+    freeStep(st, a, t, dt, p[0], p[1], 3.6 * a.kf, 0.8, 1500);
+    a.setMode('arrow');
+  }
+  function freeStep(st, a, t, dt, tx, ty, w, z, vmax) {
+    var M = st.mouseOn && st.phase !== 'build' ? mousePos(st, t) : null;
+    if (M) {
+      var tg = mouseSteer(st, a, t, dt, M, tx, ty);
+      if (a.mf) { tx = tg[0]; ty = tg[1]; w = Math.max(w, 6 * a.kf); z = 0.7; vmax = Math.max(vmax, 1400); }
+    }
+    springTo(a, tx, ty, dt, w, z, vmax);
+    a.tgx = tx; a.tgy = ty;
+    if (M) keepAway(st, a, M);
+    a.phys = true;
+  }
+  // simpler motion when the frame rate stays low (weak device): one trail ghost, no mouse play
+  function liteWatch(st, dt) {
+    if (st.liteFps || st.o.motion.lite !== 'auto') return;
+    var fw = st.fpsWin || (st.fpsWin = { n: 0, s: 0, low: 0 });
+    fw.n++; fw.s += dt;
+    if (fw.n < 60) return;
+    fw.low = fw.n / fw.s < 38 ? fw.low + 1 : 0;
+    fw.n = 0; fw.s = 0;
+    if (fw.low >= 2) { st.lite = st.liteFps = true; st.mouseOn = false; }
+  }
+
+  // --------------------------------------------------------- focus element
+  function focusCands(o) {
+    var out = [], seen = [];
+    function add(list, src) {
+      for (var i = 0; i < list.length; i++) {
+        var el = list[i];
+        if (el && el.nodeType === 1 && seen.indexOf(el) < 0) { seen.push(el); out.push({ el: el, src: src }); }
+      }
+    }
+    function q(sel) { try { return document.querySelectorAll(sel); } catch (e) { warn('focus: invalid selector ' + sel); return []; } }
+    var f = o.focus;
+    if (f && typeof f === 'string') add(q(f), 'config'); else if (f && f.nodeType === 1) add([f], 'config');
+    add(q('[data-swarm-focus]'), 'config');
+    add(q('h1'), 'auto');
+    add(q('a[class*="btn"],a[class*="button"],a[class*="cta"],button[class*="btn"],button[class*="button"],button[class*="primary"],[class*="cta"],button[type="submit"]'), 'auto');
+    add(q('[class*="logo"],[id*="logo"]'), 'auto');
+    return out;
+  }
+  // the first candidate that is (at least half) in view at scroll position top; else the largest picture; else
+  // a spot in the view
+  function focusAt(st, top) {
+    var vw = window.innerWidth, vh = window.innerHeight, sx = window.scrollX, sy = window.scrollY;
+    for (var i = 0; i < st.focusCands.length; i++) {
+      var c = st.focusCands[i];
+      if (!c.el.isConnected) continue;
+      var r = c.el.getBoundingClientRect();
+      if (r.width < 8 || r.height < 8 || r.right < 0 || r.left > vw) continue;
+      var y = r.top + sy, vis = Math.min(y + r.height, top + vh) - Math.max(y, top);
+      if (vis < Math.min(r.height * 0.5, vh * 0.3)) continue;
+      return { x: r.left + sx + r.width / 2, y: y + r.height / 2, w: r.width, h: r.height, src: c.src, el: c.el };
+    }
+    var best = null, ba = 0;
+    st.layers.forEach(function (L) { if (L.kind === 'media' && L.y < top + vh && L.y + L.h > top && L.w * L.h > ba) { ba = L.w * L.h; best = L; } });
+    if (best) return { x: best.x + best.w / 2, y: best.y + best.h / 2, w: best.w, h: best.h, src: 'media', el: best.el };
+    return { x: sx + vw * 0.6, y: top + vh * 0.48, w: Math.min(vw * 0.3, 360), h: Math.min(vh * 0.2, 200), src: 'view', el: null };
+  }
+  // the orbit around it: an ellipse just outside the element, kept mostly on screen
+  function orbitOf(st, F, top) {
+    var vw = window.innerWidth, vh = window.innerHeight, sx = window.scrollX;
+    var rx = clamp(F.w / 2 + 46, 70, vw * 0.42), ry = clamp(F.h / 2 + 38, 55, vh * 0.36);
+    var mx = Math.min(rx * 0.7, vw / 2), my = Math.min(ry * 0.7, vh / 2);
+    return { x: clamp(F.x, sx + mx, sx + vw - mx), y: clamp(F.y, top + my, top + vh - my), rx: rx, ry: ry };
+  }
+  function focusLabel(F) {
+    var e = F.el, d = e ? e.localName + (e.id ? '#' + e.id : e.classList && e.classList[0] ? '.' + e.classList[0] : '') : null;
+    return { src: F.src, el: d, x: Math.round(F.x), y: Math.round(F.y), w: Math.round(F.w), h: Math.round(F.h) };
+  }
+
+  // ---------------------------------------------------------- mouse pointer
+  function mousePos(st, t) {
+    var m = st.mouse;
+    if (!m || m.out) return null;
+    return { x: m.cx + window.scrollX, y: m.cy + window.scrollY, vx: m.vx, vy: m.vy, fresh: t - m.t < 4 };
+  }
+  // An agent near the pointer moves out of its way (harder when the pointer comes fast). Up to three curious
+  // agents then follow it on a small circle for a moment; the faster the pointer moves away from one, the
+  // sooner it gives up. They never come closer than MOUSE_MIN (see keepAway).
+  function mouseSteer(st, a, t, dt, M, tx, ty) {
+    var dx = a.x - M.x, dy = a.y - M.y, d = Math.hypot(dx, dy) || 0.01, ux = dx / d, uy = dy / d;
+    var vTo = M.vx * ux + M.vy * uy, mz = st.mz;    // > 0: the pointer comes towards the agent
+    var R = a.mf ? a.keep * 0.8 : 78 + a.kf * 20;
+    if (d < R) {
+      var push = (R - d) / R, acc = push * push * 5200 + Math.max(0, vTo) * push * 6;
+      a.vx += ux * acc * dt; a.vy += uy * acc * dt;
+      if (!a.mdodge && !a.mf && vTo > 60) { a.mdodge = true; mz.dodges++; }
+    } else if (d > R * 1.6) a.mdodge = false;
+    if (!a.mf && t > a.mcool && M.fresh && d < 130 + a.kf * 30 && st.mfollow < 3) {
+      a.mf = { t0: t, int: 1, ph: Math.atan2(dy, dx), away: 0, n: 0, amax: 0 };
+      st.mfollow++;
+    }
+    if (!a.mf) return null;
+    var f = a.mf, va = Math.max(0, -vTo);
+    f.int -= dt * (1 + va / 220) / a.T0;
+    if (va > 20) { f.away += va; f.n++; f.amax = Math.max(f.amax, va); }
+    if (f.int <= 0 || d > 320) {
+      mz.follows.push({ dur: +(t - f.t0).toFixed(3), away: f.n ? Math.round(f.away / f.n) : 0, max: Math.round(f.amax) });
+      if (mz.follows.length > 60) mz.follows.shift();
+      a.mf = null; st.mfollow--; a.mcool = t + rand(1.2, 2.2);
+      return null;
+    }
+    f.ph += a.mdir * 2.6 * dt;
+    return [M.x + Math.cos(f.ph) * a.keep, M.y + Math.sin(f.ph) * a.keep];
+  }
+  function keepAway(st, a, M) {
+    var dx = a.x - M.x, dy = a.y - M.y, d = Math.hypot(dx, dy);
+    if (d < MOUSE_MIN) {
+      var ux = d > 0.01 ? dx / d : 0, uy = d > 0.01 ? dy / d : -1, vin = a.vx * ux + a.vy * uy;
+      a.x = M.x + ux * MOUSE_MIN; a.y = M.y + uy * MOUSE_MIN;
+      if (vin < 0) { a.vx -= vin * ux; a.vy -= vin * uy; }
+      d = MOUSE_MIN;
+    }
+    if (st.mz.minD == null || d < st.mz.minD) st.mz.minD = Math.round(d * 10) / 10;
+  }
+
+  function renderAgents(st, t, dt) {
+    var vw = window.innerWidth, vh = window.innerHeight, sy = window.scrollY, sx = window.scrollX;
+    var gn = st.liteFps ? 1 : 3;
+    for (var i = 0; i < st.agents.length; i++) {
+      var a = st.agents[i];
+      if (!a.active) continue;
+      if (st.phase === 'build' && !a.task) idleStep(st, a, t, dt, vw, vh);
+      // agents moved by a task: their velocity is measured, so they glide on when the task lets them go
+      if (!a.phys && dt > 0 && a.px != null) { var kv = Math.min(1, dt * 20); a.vx = lerp(a.vx, (a.x - a.px) / dt, kv); a.vy = lerp(a.vy, (a.y - a.py) / dt, kv); }
+      a.phys = false; a.px = a.x; a.py = a.y;
       var x = a.x - sx, y = a.y - sy;
       var hh = a.hist;
       hh.unshift(x, y);
@@ -1746,15 +2071,14 @@
       var mx = hh.length >= 6 ? x - hh[4] : 0, my = hh.length >= 6 ? y - hh[5] : 0;
       var spd = Math.hypot(mx, my);
       var target = 0;
-      if (a.ringAng != null) target = a.ringAng;
-      else if (a.mode === 'arrow' && spd > 7) target = Math.atan2(my, mx) + Math.PI * 0.75;
+      if (a.mode === 'arrow' && spd > 7) target = Math.atan2(my, mx) + Math.PI * 0.75;
       a.ang += shortAngle(target - a.ang) * Math.min(1, dt * 12);
       if (a.mode !== 'arrow') a.ang = 0;
       a.el.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0) rotate(' + a.ang.toFixed(3) + 'rad)';
       var show = spd > 14;
       for (var k = 0; k < 3; k++) {
         var g = a.ghosts[k], idx = (k + 1) * 4;
-        if (show && hh.length > idx + 1) {
+        if (show && k < gn && hh.length > idx + 1) {
           g.style.opacity = String(0.42 - k * 0.12);
           g.style.transform = 'translate3d(' + hh[idx].toFixed(1) + 'px,' + hh[idx + 1].toFixed(1) + 'px,0) rotate(' + a.ang.toFixed(3) + 'rad)';
         } else if (g.style.opacity !== '0') g.style.opacity = '0';
@@ -1808,25 +2132,14 @@
     st.sections.forEach(function (s) { s.tails.forEach(function (el) { revealEl(st, el, true); }); });
     removeStyles();
     if (st.mo) { st.mo.disconnect(); st.mo = null; }
-    // ring target: the largest media element visible at the final scroll position
-    var vh = window.innerHeight, vw = window.innerWidth;
+    // the swarms gather around the focus element in view at the final scroll position (pulled in like by
+    // gravity: fast at first, a little past the target, then back), then circle it slowly
     var finalY = st.touring ? maxScroll() : window.scrollY;
-    var best = null, ba = 0;
-    st.layers.forEach(function (L) {
-      if (L.kind !== 'media') return;
-      if (L.y + L.h < finalY || L.y > finalY + vh) return;
-      var a = L.w * L.h;
-      if (a > ba) { ba = a; best = L; }
-    });
-    st.ring = best ? { x: best.x + best.w / 2, y: best.y + best.h / 2, r: clamp(Math.max(best.w, best.h) * 0.62, 110, Math.min(320, vh * 0.42)) }
-      : { x: window.scrollX + vw * 0.68, y: finalY + vh * 0.48, r: Math.min(260, vh * 0.32) };
-    var fs = Math.min(st.speedBase * st.mult, 2.5);
-    st.fin = { swarm: 1.1 / fs, form: 1.3 / fs };
-    st.agents.forEach(function (a, i) {
-      a.task = null; a.setMode('arrow');
-      a.ringSlot = (i / Math.max(1, st.activeAgents)) * Math.PI * 2;
-      a.sw = { fx: a.x, fy: a.y, ph: rand(0, 6.28) };
-    });
+    var F = focusAt(st, finalY);
+    st.finO = orbitOf(st, F, finalY);
+    st.focusInfo.done = focusLabel(F);
+    st.mfollow = 0;
+    st.agents.forEach(function (a) { a.task = null; a.mf = null; a.setMode('arrow'); });
     var ax = st.o.autoExit != null ? st.o.autoExit : !st.dbg ? 3 : st.o.mode === 'tour' ? null : 6;
     if (ax != null) st.timers.push(setTimeout(function () { if (S === st) finishNow(st, 'auto'); }, ax * 1000));
     if (st.dbg) st.dbg.done(st, t);
@@ -1834,27 +2147,16 @@
   }
   function finaleStep(st, t, dt, vw, vh) {
     if (st.touring && st.dbg) st.dbg.finale(st, t, dt);
-    var T = t - st.doneAt, R = st.ring;
-    st.agents.forEach(function (a) {
-      if (!a.active) return;
-      if (T < st.fin.swarm) {
-        // stream towards the target, swirling
-        var p = T / st.fin.swarm;
-        var ang = a.sw.ph + p * 5;
-        var rr = R.r * (1.6 - p) * 0.9;
-        var tx = R.x + Math.cos(ang) * rr, ty = R.y + Math.sin(ang * 1.3) * rr * 0.7;
-        var k = 1 - Math.exp(-dt * 4);
-        a.x = lerp(a.x, tx, k); a.y = lerp(a.y, ty, k);
-        a.ringAng = null;
-      } else {
-        var q = clamp((T - st.fin.swarm) / st.fin.form, 0, 1);
-        var th = a.ringSlot + (T - st.fin.swarm) * 0.18;
-        var rx = R.x + Math.cos(th) * R.r, ry = R.y + Math.sin(th) * R.r;
-        var kk = q < 1 ? 1 - Math.exp(-dt * 5) : 1;
-        a.x = lerp(a.x, rx, kk); a.y = lerp(a.y, ry, kk);
-        if (q > 0.5) a.ringAng = th + Math.PI / 2 + Math.PI * 0.75;
-      }
-    });
+    var T = t - st.doneAt;
+    orbitSwarms(st, st.finO, t, dt, 0.42);
+    // pull (a stiff, under-damped spring: overshoots a little) -> slow circling (soft, well damped)
+    var mix = clamp((T - 0.9) / 0.9, 0, 1), z0 = lerp(1, 0.63, clamp(+st.o.motion.spring || 0, 0, 1));
+    for (var i = 0; i < st.agents.length; i++) {
+      var a = st.agents[i];
+      if (!a.active) continue;
+      var p = slot(a, t);
+      freeStep(st, a, t, dt, p[0], p[1], lerp(6.5, 2.6, mix) * a.kf, lerp(z0, 0.85, mix), lerp(2600, 700, mix));
+    }
   }
 
   // ------------------------------------------------------- exit / replay
@@ -1903,6 +2205,8 @@
       seen: st.seenStats, visiblePending: st.visPending || 0, maxAhead: +st.maxAhead.toFixed(3),
       waits: st.waits.length ? { n: st.waits.length, avg: +(st.waits.reduce(function (x, y) { return x + y; }, 0) / st.waits.length).toFixed(3), max: +Math.max.apply(null, st.waits).toFixed(3) } : null,
       aboveSkips: st.aboveSkips, aborts: st.aborts, errors: st.errors, holes: (st.holes || []).length,
+      lite: !!st.lite, liteFps: !!st.liteFps, mouseOn: !!st.mouseOn, focus: st.focusInfo, diff: st.diff || null, swarms: (st.swarms || []).map(function (s) { var c = 0; st.agents.forEach(function (a) { if (a.active && a.swarm === s) c++; }); return c; }),
+      mouse: { dodges: st.mz.dodges, follows: st.mz.follows.length, minD: st.mz.minD, following: st.mfollow },
       fault: st.fault ? { kind: st.fault.kind, fired: st.fault.fired, task: st.fault.task || null } : null
     };
   }
@@ -1920,7 +2224,8 @@
     version: VERSION, api: api, AHEAD: AHEAD, ABOVE: ABOVE,
     now: now, clamp: clamp, lerp: lerp, rand: rand, mk: mk, rm: rm, alphaOf: alphaOf, store: store, warn: warn,
     state: function () { return S; }, finishNow: finishNow, replay: replay, skipItem: skipItem, startTask: startTask,
-    depsOk: depsOk, itemBox: itemBox, maxScroll: maxScroll, growAgents: growAgents, openSection: openSection, settled: settled
+    depsOk: depsOk, itemBox: itemBox, maxScroll: maxScroll, growAgents: growAgents, openSection: openSection, settled: settled,
+    SCROLLKEY: SCROLLKEY, scrollKey: scrollKey
   };
 
   window.SwarmRebuild = api;
@@ -1935,6 +2240,7 @@
     if (ds.controlsPosition) opts.controlsPosition = ds.controlsPosition;
     if (ds.debug === '' || ds.debug === 'true') opts.debug = true;
     if (ds.debugSrc) opts.debugSrc = ds.debugSrc;
+    if (ds.focus) opts.focus = ds.focus;
     if (ds.once === 'false') opts.once = false;
     var go = function () { start(opts); };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
