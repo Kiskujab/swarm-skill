@@ -55,6 +55,8 @@
   var DIFF_EXP = 0.85;    // difficulty ~ area^0.85 near the page average (2x area -> ~1.6-1.8x the work) ...
   var DIFF_SPAN = 1;      // ... squashed to 2^+-1: the hardest task takes at most ~4x the easiest
   var MOUSE_MIN = 36;     // px: an agent never comes closer to the mouse pointer than this
+  var REST_GAP = 72;      // px: idle agents rest at least this far apart (no clusters of overlapping cursors) ...
+  var REST_FADE = 1.4;    // s: ... and fade out after resting this long; they come back with their next task
   var ACTION = 'a[href],area[href],button,input,select,textarea,label,summary,details,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[role="checkbox"],[role="switch"],[onclick],[tabindex],[contenteditable=""],[contenteditable="true"]';
 
   var DEFAULTS = {
@@ -1161,7 +1163,7 @@
     // the swarms leave the focus element and wander off to where the work is; the first tasks start shortly after
     var os = st.openScale;
     st.swarms.forEach(function (sw) { sw.vx = sw.vy = 0; sw.ax = null; });
-    st.agents.forEach(function (a) { a.mf = null; });
+    st.agents.forEach(function (a) { a.mf = null; a.rest = null; a.idleAt = null; });
     st.mfollow = 0;
     st.dispatchAt = t + 0.2 / os;
     if (st.useRulers) st.rulersUntil = t + 1.45 / os;
@@ -1193,7 +1195,6 @@
 
   function buildStep(st, t, dt, vw, vh) {
     var sp = st.speedBase * st.mult;
-    wanderSwarms(st, t, dt, vw, vh);
     var sy = window.scrollY, sx = window.scrollX, cut = sy - Math.max(40, vh * ABOVE);
     st.docH = maxScroll() + vh;
     // everything that scrolled above the view is finished at once (no animation), its agents are free again
@@ -1531,6 +1532,8 @@
     it.state = 'active';
     it.task = tk;
     a.task = tk;
+    wake(a, t);
+    tk.helpers.forEach(function (h) { wake(h, t); });
     st.active.push(tk);
     if (it.L) it.L.state = 'active';
     progress(st);
@@ -1990,16 +1993,6 @@
       s.y = O.y + Math.sin(s.th) * O.ry * br * s.fy;
     }
   }
-  // while the page is built: idle swarms glide between spots in view (mostly on the right), following the scroll
-  function wanderSwarms(st, t, dt, vw, vh) {
-    var sy = window.scrollY, sx = window.scrollX;
-    for (var i = 0; i < st.swarms.length; i++) {
-      var s = st.swarms[i];
-      if (s.ax == null || t > s.next) { s.next = t + rand(2.5, 5); s.ax = Math.random() < 0.65 ? rand(0.58, 0.92) : rand(0.08, 0.92); s.ay = rand(0.15, 0.8); }
-      if (s.y < sy - vh * 0.6 || s.y > sy + vh * 1.6) { s.y = s.y < sy ? sy - 40 : sy + vh + 40; s.vy = 0; }
-      springTo(s, sx + s.ax * vw, sy + s.ay * vh, dt, 1.7, 0.9, 900);
-    }
-  }
   function openingStep(st, t, dt, vw, vh) {
     var sy = window.scrollY;
     if (!st.openO || t > st.openAt) {
@@ -2017,14 +2010,51 @@
       a.setMode('arrow');
     }
   }
+  // While the page is built, an agent without work leaves its swarm: it rests at its own spot in view, far from the
+  // other resting agents (never a cluster of overlapping cursors), drifts slowly, and fades out after a moment. It
+  // comes back (fades in where it rests) when it gets its next task; at the finale they all come back and gather.
   function idleStep(st, a, t, dt, vw, vh) {
-    var sy = window.scrollY;
-    if (a.y < sy - vh * 1.5 || a.y > sy + vh * 2.5) { a.y = a.py = a.y < sy ? sy - 30 : sy + vh + 30; a.vy *= 0.3; a.hist.length = 0; }
-    var p = slot(a, t, true);
-    freeStep(st, a, t, dt, p[0], p[1], 3.6 * a.kf, 0.8, 1500);
-    if (Math.abs(a.vx) + Math.abs(a.vy) < 4 && Math.abs(p[0] - a.x) + Math.abs(p[1] - a.y) < 1) { a.vx = a.vy = 0; a.x = p[0]; a.y = p[1]; } // at rest
+    var sy = window.scrollY, sx = window.scrollX;
+    if (a.idleAt == null) a.idleAt = t;
+    if (!a.rest || t > a.rest.next) pickRest(st, a, t, vw, vh);
+    var tx = sx + a.rest.x, ty = sy + a.rest.y;
+    a.tgx = tx; a.tgy = ty;
+    if (t - a.idleAt > REST_FADE) fadeAgent(a, false, t);
+    if (a.op === 0 && t - a.opAt > 0.7) { a.x = tx; a.y = ty; a.vx = a.vy = 0; a.phys = true; return; } // invisible: keeps its place in view
+    springTo(a, tx, ty, dt, 1.8 * a.kf, 0.95, 900);
+    if (Math.abs(a.vx) + Math.abs(a.vy) < 4 && Math.abs(tx - a.x) + Math.abs(ty - a.y) < 1) { a.vx = a.vy = 0; a.x = tx; a.y = ty; } // at rest
     a.setMode('arrow');
+    a.phys = true;
   }
+  // a resting place in view (viewport coordinates): far from the other resting agents and from agents at work; the
+  // next one is near the last (a slow drift)
+  function pickRest(st, a, t, vw, vh) {
+    var sx = window.scrollX, sy = window.scrollY, cx = a.x - sx, cy = a.y - sy, best = null, bs = -1e9, R = a.rest;
+    for (var k = 0; k < 10; k++) {
+      var x = R ? R.x + rand(-80, 80) : rand(0.05, 0.95) * vw, y = R ? R.y + rand(-60, 60) : rand(0.1, 0.9) * vh;
+      x = clamp(x, vw * 0.04, vw * 0.96 - 20); y = clamp(y, vh * 0.08, vh * 0.92 - 20);
+      var md = 1e9;
+      for (var i = 0; i < st.agents.length; i++) {
+        var o = st.agents[i];
+        if (o === a || !o.active) continue;
+        var ox = !o.task && o.rest ? o.rest.x : o.x - sx, oy = !o.task && o.rest ? o.rest.y : o.y - sy;
+        md = Math.min(md, Math.hypot(ox - x, oy - y));
+      }
+      var sc = Math.min(md, REST_GAP * 2) - (R ? 0 : 0.1 * Math.hypot(x - cx, y - cy));
+      if (sc > bs) { bs = sc; best = [x, y]; }
+    }
+    a.rest = { x: best[0], y: best[1], next: t + rand(3, 6) };
+  }
+  // fade an agent out (resting) or in (working, finale); only the change is written
+  function fadeAgent(a, on, t) {
+    var v = on ? 1 : 0;
+    if (a.op === v) return;
+    if (a.op == null && on) { a.op = 1; return; }
+    a.op = v; a.opAt = t;
+    a.el.style.transition = on ? 'opacity .22s ease-out' : 'opacity .6s ease-in';
+    a.el.style.opacity = on ? '' : '0';
+  }
+  function wake(a, t) { a.idleAt = null; a.rest = null; fadeAgent(a, true, t); }
   function freeStep(st, a, t, dt, tx, ty, w, z, vmax) {
     var M = st.mouseOn && st.phase !== 'build' ? mousePos(st, t) : null;
     if (M) {
@@ -2228,7 +2258,7 @@
     st.finO = orbitOf(st, F, finalY);
     st.focusInfo.done = focusLabel(F);
     st.mfollow = 0;
-    st.agents.forEach(function (a) { a.task = null; a.mf = null; a.setMode('arrow'); });
+    st.agents.forEach(function (a) { a.task = null; a.mf = null; a.setMode('arrow'); wake(a, t); });
     var ax = st.o.autoExit != null ? st.o.autoExit : !st.dbg ? 3 : st.o.mode === 'tour' ? null : 6;
     if (ax != null) st.timers.push(setTimeout(function () { if (S === st) finishNow(st, 'auto'); }, ax * 1000));
     if (st.dbg) st.dbg.done(st, t);

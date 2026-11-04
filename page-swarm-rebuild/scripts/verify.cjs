@@ -689,13 +689,19 @@ function fixedTargets() {
     // in the page, every frame: working agents outside the view (at the scroll position the frame was drawn for),
     // tasks whose part is completely out of view
     const SAMPLER = () => {
-      const v = window.__visS = { frames: 0, work: 0, offAgents: 0, offTasks: 0, ex: [] };
+      const v = window.__visS = { frames: 0, work: 0, offAgents: 0, offTasks: 0, ex: [], idle: [], shown: [] };
       (function f() {
         const R = window.SwarmRebuild, m = R && R._motion && R._motion(true);
         if (m && m.phase === 'build' && !m.touring) {
           v.frames++;
           m.agents.forEach((a) => { if (!a.work) return; v.work++; if (a.y < m.sy - 2 || a.y > m.sy + m.vh + 2) { v.offAgents++; if (v.ex.length < 4) v.ex.push(Math.round(a.y - m.sy)); } });
           v.offTasks += m.offTasks || 0;
+          // idle agents that can be seen, overlapping another one (cursor icons ~20 px): after the opening swarms dissolved
+          if (m.bt > 0.6) {
+            const sh = m.agents.filter((a) => !a.task && a.op !== 0);
+            let n = 0; sh.forEach((a) => { if (sh.some((o) => o !== a && Math.abs(o.x - a.x) < 18 && Math.abs(o.y - a.y) < 18)) n++; });
+            v.idle.push(n); v.shown.push(sh.length);
+          }
         }
         if (!R || R.state().phase !== 'idle') requestAnimationFrame(f);
       })();
@@ -716,6 +722,12 @@ function fixedTargets() {
         vs.length + ' starts, in view at the start: min ' + Math.round((vs[0] || 0) * 100) + ' %, 10th percentile ' + Math.round((report.visible.read.p10 || 0) * 100) + ' %, median ' + Math.round((report.visible.read.median || 0) * 100) + ' %' + (under.length ? ', under: ' + JSON.stringify(under.slice(0, 3)) : ''));
       check('visible: no working agent outside the view, no task running out of view (reading down)', v.work > 0 && v.offAgents === 0 && v.offTasks === 0,
         v.frames + ' frames, ' + v.work + ' working-agent samples, outside ' + v.offAgents + (v.ex.length ? ' (' + v.ex.join(', ') + ' px)' : '') + ', tasks out of view ' + v.offTasks + '; finished out of sight: ' + s.aboveSkips + ' above, ' + s.offSkips + ' scrolled out, ' + s.depSkips + ' waited-for');
+      const io = v.idle.slice().sort((a, b) => a - b), q = (a, f) => a.length ? a[Math.min(a.length - 1, Math.floor(a.length * f))] : 0;
+      const many = v.idle.filter((x) => x >= 3).length / Math.max(1, v.idle.length);
+      const shn = v.shown.slice().sort((a, b) => a - b);
+      report.visible.idle = { frames: io.length, overlapMedian: q(io, 0.5), overlapP95: q(io, 0.95), overlapMax: io[io.length - 1] || 0, framesWith3: +many.toFixed(4), shownIdleMedian: q(shn, 0.5), shownIdleP95: q(shn, 0.95) };
+      check('idle: resting agents never cluster (at most 2 overlapping in 98 % of the frames)', io.length > 0 && q(io, 0.5) === 0 && many <= 0.02,
+        io.length + ' frames: overlapping idle cursors median ' + q(io, 0.5) + ', 95th percentile ' + q(io, 0.95) + ', max ' + (io[io.length - 1] || 0) + ', frames with 3 or more ' + (many * 100).toFixed(1) + ' %; idle cursors shown: median ' + q(shn, 0.5) + ' (the rest faded out)');
       check('visible: reading-down run — no errors', !bag.length && !bag.fallbacks.length, (bag.concat(bag.fallbacks)).slice(0, 3).join(' | '));
       await ctx.close();
     }

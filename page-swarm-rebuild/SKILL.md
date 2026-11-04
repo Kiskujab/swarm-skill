@@ -79,8 +79,12 @@ A/B tests (debug add-on).
 - **Swarms:** free agents fly in 2-4 swarms of clearly different sizes (phones: 2). Every agent is pulled by a damped
   spring towards its place in its swarm; the swarm centres move on an ellipse around the focus element whose radius
   breathes and whose pace changes, so agents speed up and slow down by themselves and never run on a perfect circle.
-  The opening already starts in swarms (it lasts well under a second for visitors). While the page is built, idle
-  swarms glide between spots in view, mostly on the right.
+  The opening already starts in swarms (it lasts well under a second for visitors).
+- **Resting agents** (during the build, an agent without work): it leaves its swarm for its own spot in view, at least
+  72 px from every other resting agent (never a cluster of overlapping cursors), drifts slowly and fades out after
+  1.4 s; it fades in where it rests when it gets its next task. At the finale all of them come back and gather in
+  swarms around the focus. Measured: at most 2 overlapping resting cursors in 99.6-100 % of the frames (1.2: a median
+  of 6 and up to 20 on the demo).
 - **Finale:** a stiff, under-damped spring (damping 0.63, `motion.spring`) pulls every agent to the focus: fastest at
   the start, about 5-20 % past its place, then back; after ~1 s the spring softens and the swarms circle slowly.
 - **Mouse** (opening and finale, desktop only; never on touch, never with reduced motion): an agent near the pointer

@@ -69,8 +69,8 @@ Order A, B, C, D, E, F, G, H; commit + push after every block. Full suite only o
 | block | state | notes |
 |---|---|---|
 | A visible-only build (scroll mode) | done | `buildVisible` 0.6; verify group `visible` |
-| B idle agents never cluster | next | |
-| C language support | open | |
+| B idle agents never cluster | done | rest spots >= 72 px apart, fade after 1.4 s; verify check `idle` (in group `visible`) |
+| C language support | next | |
 | D legacy backup | open | |
 | E one-command removal | open | |
 | F many realistic test pages | open | |
@@ -95,6 +95,15 @@ Order A, B, C, D, E, F, G, H; commit + push after every block. Full suite only o
   if it is in view too, else finished at once (otherwise a half-visible master card could block its visible copies).
 - (A) The debug tour (auto-scroll, recordings only) is unchanged: its camera brings the next part into view by itself,
   and the visibility rule there could stall it (the camera puts the next tall part only 56 % into view).
+- (B) Resting agents: both remedies combined - each idle agent gets its own spot in view far from the others (72 px
+  apart, so the cursors never overlap), drifts slowly, and fades out after 1.4 s (0.6 s fade, back in 0.22 s when it
+  gets a task, so nothing flashes). Reason: spreading alone still leaves up to ~20 cursors wandering around on a dense
+  page with little to do (with the visible-only build agents wait more often); fading alone would leave a cluster
+  visible during the first second. Swarms stay for the opening and the finale. A faded agent is not repainted (it
+  keeps its place in the view), so it costs nothing. The idle swarms' wandering during the build was removed.
+- (B) Cluster threshold: "overlapping" = another cursor within 18 px on both axes (the icon is ~20 px); the check
+  allows 3 or more overlapping in at most 2 % of the frames (transients when a row of copies releases its helpers) and
+  ignores the first 0.6 s of the build (the opening swarms dissolving). Measured 0.0-0.4 %, median 0 everywhere.
 - (A) 1.2.0 measured with the same probe (demo desktop, reading down): 58 of 120 starts under 60 % in view (many at
   0 %), working agents off screen in 42 % of the samples. 1.3: 0 starts under 60 %, 0 off screen.
 
