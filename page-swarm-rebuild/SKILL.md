@@ -19,7 +19,7 @@ and this file disagree, this file wins (product decisions were made after the de
 | `assets/swarm-rebuild.js` | The module (classic script, sets `window.SwarmRebuild`; also importable from a bundler). |
 | `assets/swarm-rebuild.css` | Overlay styles, all scoped under `#swarm-rebuild-root`. |
 | `assets/react/SwarmRebuild.jsx` | React / Next.js client wrapper + `<SwarmRebuildHead />` (pre-paint snippet). |
-| `assets/demo/` | Fictional dark portfolio demo (`assets/demo/index.html`, 212 layers, 6.6 viewport heights). |
+| `assets/demo/` | Fictional dark portfolio demo (`assets/demo/index.html`, 214 layers (desktop), 6.6 viewport heights). |
 | `tests/pages/dental/` | Fictional dental practice page: light theme, phone links, fixed "Call us" + booking bar on mobile. |
 | `tests/pages/nextjs/` | Fictional Next.js 15 App Router app with a React counter button (hydration check). |
 | `scripts/verify.cjs` | Playwright check of one page: recording, timeline, DOM/pixel identity, CLS, fps, Esc/✕/Replay, reduced motion, no-JS, manual scrolling, control-bar overlap, console errors. |

@@ -11,6 +11,7 @@ Module (`assets/`)
   control bar at the right edge (compact, collapsible, small tab on mobile, `controlsPosition: right | left | bottom`).
 - Fix: a phone link (or another `instant` / `exclude` element) inside a repeated row (e.g. a contact list) stayed
   hidden until the clone animation reached it. Such rows are no longer cloned, so the link shows at once.
+  The demo now counts 214 layers instead of 212 (its contact rows are built one by one).
 - Version 1.0.0 -> 1.0.1.
 
 SKILL.md

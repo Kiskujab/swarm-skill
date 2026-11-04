@@ -9,7 +9,7 @@
 > - **A vezérlősáv nem alul középen van**, hanem a jobb szélen (kompakt, összecsukható; `controlsPosition: right | left | bottom`), mobilon egy kis fül egy szabad sarokban, ami nem takarja a fix sávokat, telefonszám-linkeket és gombokat.
 > - **Az ügynökök a nézetet követik:** csak a látható részt és legfeljebb fél képernyőnyit alatta építenek. Kézi görgetésre a tour leáll, és az építés oda megy, ahová a látogató néz (lásd 8.2 és 8.7).
 > - **Termékdöntés:** a fő mód a látogató görgetése által hajtott `scroll`; a vezérlősáv és a tour csak teszt- és felvételi eszköz. (A modul v1.0.1-ben a sáv még minden módban látszik, ennek kikapcsolása a következő körök feladata.)
-> - A demón 212 réteg van 6,6 képernyőnyi oldalon (a videón 364 réteg, 7,1 képernyő).
+> - A demón 214 réteg van (a v1.0.1 előtt 212) 6,6 képernyőnyi oldalon (a videón 364 réteg, 7,1 képernyő).
 
 ---
 
