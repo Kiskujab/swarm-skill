@@ -75,7 +75,33 @@ Order A, B, C, D, E, F, G, H; commit + push after every block. Full suite only o
 | E one-command removal | done | `project.cjs uninstall [--purge]`, hash-checked against the backup |
 | F many realistic test pages | done | law, accounting, bootstrap, spa (+ 4 language pages); compatibility table in SKILL.md |
 | G perf / SEO / a11y / minified build | done | Lighthouse table, crawlers skip, status message, min build 27.5 KB gzip (budget 30 KB), dental fps cause, Next.js circle re-run |
-| H extras | next | |
+| H extras | done | `palette: 'page'`, `scripts/record-video.cjs`, version 1.3.0 everywhere (tags cannot be pushed through the proxy) |
+
+### Final suite (task 4, run once at the end, in two parts because of the 2-hour limit of a background job)
+
+`run-tests.cjs --pages core` (installer + demo / dental / Next.js, desktop + mobile, 16 runs): **666/666**.
+`run-tests.cjs --pages extra` (8 new pages, desktop + mobile, 16 runs): **491/493**. Total **1157/1159**.
+- The 2 failures: Arabic page, the `text` run (slow reading with a per-frame sampler), CLS 0.0203 on desktop and on
+  mobile (limit 0.01). The recorded runs of the same page: CLS 0.0017 (desktop) and 0.0078 (mobile). Sub-pixel moves
+  of typed overlay text where numbers / Latin words sit inside Arabic lines; the page itself never moves (pixel diff 0,
+  DOM identical). Not solved after four attempts (see decisions) - stuck, documented.
+- fps (module-measured, no screenshots; 1.2.0 suite in brackets): demo desktop tour6 56.5 (55.3), tour 59.0 (57.1),
+  scroll 58.1 (53.9), fast 56.6 (54.1); dental desktop tour6 58.5 (58.6), scroll 57.7 (54.2); Next.js desktop tour6
+  58.1 (59.2, a 2.8 s build), scroll 58.1 (57.1); every mobile run 59.4-60. New pages 55.8-60.
+- CLS 0.0000 everywhere except the Arabic page (above); pixel diff 0.000 % everywhere; fixed elements never covered;
+  above-the-view probes 0 not final; every start >= 60 % in view (min 60-98 %, median 100 %), 0 agents off screen,
+  fill after fast scrolls 0.6-2.4 s (avg 0.64-1.49 s); idle overlap median 0 everywhere; 0 split characters;
+  carets 0 off (436 right-to-left samples); motion group passes on demo / dental / Next.js, both devices.
+- Interleaved bench 1.3.0 vs 1.2.0 (4 reps): dental scroll 56.3 -> 57.1, fast 56.7 -> 57.1, tour6 58.8 -> 58.5; demo
+  scroll 56.8 -> 57.5, fast 56.5 -> 56.2, tour6 57.3 -> 57.2 (after the lazy grapheme fix).
+
+### What is done / not done / stuck
+
+- Done: A-H (table above), docs (SKILL.md, README, CHANGELOG 1.3.0), full suite.
+- Not done / not verifiable here: real devices (iOS Safari, Android, a real mouse), real websites (no outside network),
+  the live GitHub Pages site (github.io is blocked from the container), a Vite production build (installer tested on
+  file level only), a Lighthouse run on a real phone.
+- Stuck: Arabic overlay CLS 0.002-0.02 (above).
 
 ### Decisions (task 4)
 
