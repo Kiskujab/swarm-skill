@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ilka Marron — Motion &amp; 3D Designer</title>
+<!-- swarm-rebuild: hide layers before first paint (no-JS visitors never run this) -->
+<script>(function(d,w){w.__swarmRebuildSnippet=1;try{var q=new URLSearchParams(location.search).get('rebuild');if(q==='0')return;if(w.matchMedia&&w.matchMedia('(prefers-reduced-motion: reduce)').matches)return;if(q!=='1'&&sessionStorage.getItem('swarm-rebuild:seen'))return;var s=d.createElement('style');s.id='swarm-rebuild-hide';s.textContent='@layer swarm-rebuild{body *{visibility:hidden!important}}';d.head.appendChild(s);setTimeout(function(){var r=w.SwarmRebuild;if(!(r&&r.active)){var e=d.getElementById('swarm-rebuild-hide');if(e)e.remove()}},5000)}catch(e){}})(document,window);</script>
+<link rel="stylesheet" href="../swarm-rebuild.css">
+<style>
+  :root{--bg:#0a0b10;--fg:#eef0f4;--mute:#8b90a0;--line:rgba(255,255,255,.09);--acc:#ff6b3d;--card:#12141c;--disp:"Arial Narrow","Helvetica Neue Condensed","Roboto Condensed",Impact,ui-sans-serif,system-ui,sans-serif}
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  img{display:block;max-width:100%}
+  .wrap{max-width:1240px;margin:0 auto;padding:0 40px}
+  .lbl{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--mute);font-weight:600}
+  .disp{font-family:var(--disp);font-weight:800;text-transform:uppercase;letter-spacing:-.01em;line-height:.92;margin:0}
+  .acc{color:var(--acc)}
+  .rule{height:1px;background:var(--line);border:0;margin:0}
+  .btn{display:inline-flex;align-items:center;gap:10px;background:var(--acc);color:#140804;font-weight:700;font-size:13px;padding:13px 20px;border-radius:4px}
+  .ghost{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);padding:9px 14px;border-radius:999px;font-size:12px;font-weight:600}
+  /* header */
+  header.top{position:sticky;top:0;z-index:5;background:rgba(10,11,16,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .top .wrap{display:flex;align-items:center;gap:32px;height:64px}
+  .logo{font-family:var(--disp);font-weight:800;font-size:22px;letter-spacing:.02em}
+  .logo b{color:var(--acc)}
+  nav ul{display:flex;gap:26px;list-style:none;margin:0 auto;padding:0}
+  nav li a{font-size:13px;color:#c5c9d4}
+  .motion{font-size:12px;color:var(--mute);background:none;border:1px solid var(--line);border-radius:999px;padding:6px 12px;cursor:pointer}
+  /* hero */
+  .hero{position:relative;min-height:calc(100vh - 64px);overflow:hidden}
+  .hero .wrap{display:grid;grid-template-columns:1.1fr 1fr .5fr;gap:28px;align-items:end;padding-top:56px;padding-bottom:40px;min-height:calc(100vh - 64px)}
+  .bigword{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);font-family:var(--disp);font-weight:900;font-size:min(23vw,330px);line-height:.8;color:#3a1710;letter-spacing:-.02em;white-space:nowrap;pointer-events:none}
+  .hero-l{position:relative;align-self:center}
+  .hello{font-family:Georgia,"Times New Roman",serif;font-style:italic;font-size:34px;margin:14px 0 4px}
+  .name{font-size:clamp(64px,8.2vw,118px)}
+  .role{font-family:var(--disp);font-weight:800;font-size:26px;text-transform:uppercase;margin:16px 0 14px;line-height:1}
+  .hero-l p{max-width:380px;color:#b9bdc9;margin:0 0 24px}
+  .loc{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mute);margin-top:22px}
+  .portrait{position:relative;align-self:stretch;border-radius:6px;overflow:hidden;min-height:440px}
+  .portrait img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
+  .stats{display:flex;flex-direction:column;gap:22px;align-self:center}
+  .stat .n{font-family:var(--disp);font-weight:800;font-size:44px;line-height:1}
+  .stat .t{font-size:11px;color:var(--mute);line-height:1.35;margin-top:4px}
+  .cv{font-size:12px;font-weight:700;letter-spacing:.1em;border-bottom:1px solid var(--acc);padding-bottom:3px;align-self:flex-start}
+  .hero-foot{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding:18px 0}
+  .play{display:flex;align-items:center;gap:12px;font-size:12px;font-weight:700;letter-spacing:.12em}
+  .play i{width:36px;height:36px;border-radius:50%;border:1px solid var(--acc);display:grid;place-items:center}
+  /* sections */
+  section.blk{padding:110px 0}
+  .head{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin-bottom:28px}
+  .head h2{font-size:clamp(46px,5.6vw,76px)}
+  .more{font-size:13px;color:#c5c9d4;display:flex;gap:8px;align-items:center}
+  .filters{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:26px 0 34px}
+  .filters .chip{font-size:12px;padding:7px 14px;border-radius:999px;background:#161923;color:#c5c9d4}
+  .filters .chip.on{background:var(--acc);color:#140804;font-weight:700}
+  .search{margin-left:auto;background:#11131a;border:1px solid var(--line);border-radius:999px;color:var(--fg);padding:8px 14px;font:inherit;font-size:12px;width:220px}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  .card{background:var(--card);border-radius:6px;overflow:hidden}
+  .card img{width:100%;height:auto;aspect-ratio:16/10;object-fit:cover}
+  .card .meta{display:flex;gap:14px;align-items:baseline;padding:16px 18px 20px}
+  .card .meta b{font-family:var(--disp);font-size:30px;color:var(--acc);line-height:1}
+  .card h3{margin:0;font-size:15px}
+  .card small{color:var(--mute);font-size:12px}
+  .logos{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:30px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .logos .lg{display:flex;align-items:center;gap:8px;color:#d9dce4;font-weight:800;letter-spacing:.06em;font-size:15px;opacity:.85}
+  .arrows{display:flex;gap:8px}
+  .arrows span{width:34px;height:34px;border:1px solid var(--line);border-radius:50%;display:grid;place-items:center;font-size:13px}
+  .awards{display:grid;grid-template-columns:1fr 1.1fr;gap:70px}
+  .awards h2{font-size:clamp(52px,6vw,84px)}
+  .big10{display:flex;align-items:center;gap:14px;margin:34px 0 18px}
+  .big10 .n{font-family:var(--disp);font-weight:900;font-size:110px;line-height:.8}
+  .awards p{color:#b9bdc9;max-width:400px}
+  .alist{list-style:none;margin:0;padding:0}
+  .alist li{display:grid;grid-template-columns:40px 1fr auto;gap:16px;align-items:center;padding:20px 0;border-bottom:1px solid var(--line)}
+  .alist .i{font-size:11px;color:var(--mute)}
+  .alist strong{font-size:18px;display:block}
+  .alist span.o{font-size:12px;color:var(--mute)}
+  .alist .y{font-family:var(--disp);font-weight:800;font-size:30px;color:var(--acc)}
+  .proc{display:grid;grid-template-columns:.8fr 1.6fr;gap:50px;align-items:center}
+  .proc h2{font-size:clamp(56px,6.4vw,92px)}
+  .proc p{color:#b9bdc9;max-width:340px;margin:24px 0 12px}
+  .ba{position:relative;border-radius:6px;overflow:hidden;aspect-ratio:15/8}
+  .ba img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .ba .after{clip-path:inset(0 0 0 50%)}
+  .ba .div{position:absolute;left:50%;top:0;bottom:0;width:2px;background:#fff;margin-left:-1px}
+  .ba .knob{position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;background:var(--acc);box-shadow:0 0 0 4px rgba(255,107,61,.25)}
+  .ba .tag{position:absolute;top:14px;font-size:10px;letter-spacing:.14em;font-weight:700;background:rgba(0,0,0,.55);padding:5px 8px;border-radius:3px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:70px}
+  .edu{list-style:none;margin:26px 0;padding:0}
+  .edu li{padding:12px 0;border-bottom:1px solid var(--line)}
+  .edu b{display:block;font-size:14px}
+  .edu span{font-size:12px;color:var(--mute)}
+  .tools{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+  .tools .t{font-size:11px;padding:6px 11px;border:1px solid var(--line);border-radius:4px;color:#c5c9d4}
+  .sw{display:flex;gap:10px;margin-top:16px}
+  .sw .ic{width:34px;height:34px;border-radius:7px;display:grid;place-items:center;font-size:11px;font-weight:800;color:#0a0b10}
+  .tl{position:relative;list-style:none;margin:0;padding:0 0 0 46px}
+  .tl::before{content:"";position:absolute;left:14px;top:6px;bottom:6px;width:1px;background:var(--acc);opacity:.6}
+  .tl li{position:relative;padding:0 0 26px}
+  .tl .num{position:absolute;left:-46px;top:0;width:29px;height:29px;border-radius:50%;border:1px solid var(--acc);display:grid;place-items:center;font-size:11px;font-weight:700;background:var(--bg);color:var(--acc)}
+  .tl b{display:block}
+  .tl span{font-size:13px;color:var(--mute)}
+  .quote{background:#7d2a18;border-radius:6px;padding:30px;margin-top:10px}
+  .quote p{font-family:Georgia,serif;font-size:24px;line-height:1.3;margin:0 0 18px;color:#ffe2d6}
+  .quote small{font-size:11px;letter-spacing:.12em;color:#ffb9a1}
+  .journey{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:60px}
+  .vline{position:absolute;left:50%;top:0;bottom:0;width:2px;background:var(--acc);opacity:.7}
+  .jent{list-style:none;margin:0;padding:0}
+  .jent li{display:grid;grid-template-columns:120px 1fr;gap:18px;padding:22px 0;border-bottom:1px solid var(--line)}
+  .jent .yr{font-size:12px;color:var(--mute)}
+  .jent b{font-size:19px;display:block}
+  .jent span{font-size:12px;color:var(--mute)}
+  .contact{display:grid;grid-template-columns:1fr 1fr 1fr;gap:40px;align-items:start}
+  .contact h2{font-size:clamp(56px,6vw,90px)}
+  .contact p{color:#b9bdc9;margin:20px 0 26px}
+  .rows{list-style:none;margin:0;padding:0}
+  .rows li{display:flex;gap:14px;align-items:center;padding:16px 0;border-bottom:1px solid var(--line)}
+  .rows .ic{width:34px;height:34px;border-radius:50%;background:#1a1d27;display:grid;place-items:center;color:var(--acc);font-size:14px}
+  .rows small{display:block;font-size:10px;letter-spacing:.14em;color:var(--mute)}
+  .rows a{font-size:14px}
+  .reel{position:relative;border-radius:6px;overflow:hidden;aspect-ratio:3/2;background:#0b0c11}
+  .reel img{width:100%;height:100%;object-fit:cover}
+  .reel h4{position:absolute;left:22px;top:20px;margin:0;font-family:var(--disp);font-size:44px;line-height:.9;text-transform:uppercase}
+  .reel .pb{position:absolute;right:18px;bottom:18px;width:52px;height:52px;border-radius:50%;background:var(--acc);display:grid;place-items:center;color:#140804;font-size:16px}
+  footer{border-top:1px solid var(--line);padding:30px 0 60px}
+  footer .wrap{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--mute)}
+  @media (max-width:900px){
+    .hero .wrap,.awards,.proc,.two,.journey,.contact{grid-template-columns:1fr}
+    .cards{grid-template-columns:1fr}
+    nav ul{display:none}
+    .vline{display:none}
+    .logos{flex-wrap:wrap}
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="#">ilka<b>.</b></a>
+    <nav aria-label="Main">
+      <ul>
+        <li><a href="#work">Work</a></li>
+        <li><a href="#awards">Awards</a></li>
+        <li><a href="#process">Process</a></li>
+        <li><a href="#about">About</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ul>
+    </nav>
+    <button class="motion" type="button" id="motionToggle">Motion on</button>
+    <a class="ghost" href="#contact">Let's talk ↗</a>
+  </div>
+</header>
+
+<main>
+<section class="hero" id="home">
+  <div class="bigword" aria-hidden="true">MOTION</div>
+  <div class="wrap">
+    <div class="hero-l">
+      <div class="lbl">Motion &amp; 3D designer</div>
+      <p class="hello">Hey, I'm</p>
+      <h1 class="disp name">Ilka <span class="acc">Marron.</span></h1>
+      <div class="role">Motion <span class="acc">&amp;</span> 3D</div>
+      <p>I turn rough ideas into moving pictures — title sequences, product films and loops for brands that would rather be felt than explained.</p>
+      <a class="btn" href="#work">See my work ↓</a>
+      <div class="loc">● Based in Tallinn, working worldwide</div>
+    </div>
+    <div class="portrait"><img src="img/hero.svg" alt="Abstract self-portrait illustration" width="900" height="1100"></div>
+    <div class="stats">
+      <div class="stat"><div class="n">9.</div><div class="t">Years in<br>motion design</div></div>
+      <div class="stat"><div class="n">64.</div><div class="t">Projects<br>delivered</div></div>
+      <div class="stat"><div class="n">12.</div><div class="t">Festival<br>selections</div></div>
+      <a class="cv" href="#">DOWNLOAD CV</a>
+    </div>
+  </div>
+</section>
+<div class="wrap">
+  <div class="hero-foot">
+    <a class="play" href="#reel"><i>▶</i>PLAY SHOWREEL</a>
+    <span class="lbl">Scroll to discover ↓</span>
+    <span class="lbl">Selected work / 2019–2026</span>
+  </div>
+</div>
+
+<section class="blk" id="work">
+  <div class="wrap">
+    <div class="lbl">01 / Selected work</div>
+    <div class="head">
+      <h2 class="disp">Work that <span class="acc">moves.</span></h2>
+      <a class="more" href="#">All projects →</a>
+    </div>
+    <hr class="rule">
+    <div class="filters">
+      <a class="chip on" href="#">All</a><a class="chip" href="#">Titles</a><a class="chip" href="#">3D</a><a class="chip" href="#">Product</a><a class="chip" href="#">Loops</a><a class="chip" href="#">Brand</a><a class="chip" href="#">Music</a><a class="chip" href="#">Social</a><a class="chip" href="#">R&amp;D</a>
+      <input class="search" type="search" placeholder="Search projects…" aria-label="Search projects">
+    </div>
+    <div class="cards">
+      <article class="card"><img src="img/work1.svg" alt="" width="800" height="500"><div class="meta"><b>01</b><div><h3>Tidewater — title sequence</h3><small>Titles / 2025</small></div></div></article>
+      <article class="card"><img src="img/work2.svg" alt="" width="800" height="500"><div class="meta"><b>02</b><div><h3>Bloomline product launch</h3><small>Product / 2025</small></div></div></article>
+      <article class="card"><img src="img/work3.svg" alt="" width="800" height="500"><div class="meta"><b>03</b><div><h3>Fernhouse brand loops</h3><small>Loops / 2024</small></div></div></article>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="clients" style="padding-top:20px">
+  <div class="wrap">
+    <div class="head">
+      <div><div class="lbl">Trusted by</div><h2 class="disp" style="font-size:40px;margin-top:8px">Studios &amp; brands.</h2></div>
+      <div style="display:flex;gap:16px;align-items:center"><a class="more" href="#">All clients (24)</a><div class="arrows"><span>←</span><span>→</span></div></div>
+    </div>
+    <div class="logos">
+      <div class="lg">◆ ORBIS</div>
+      <div class="lg">◐ KETTLE&amp;CO</div>
+      <div class="lg">▲ NOVAFORM</div>
+      <div class="lg">● PIER 9</div>
+      <div class="lg">✦ LUMEN</div>
+      <div class="lg">◼ ARCWAY</div>
+      <div class="lg">⬢ TESSEL</div>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="awards">
+  <div class="wrap awards">
+    <div>
+      <div class="lbl">02 / Recognition</div>
+      <h2 class="disp" style="margin-top:14px">The craft.<br><span class="acc">The credit.</span></h2>
+      <div class="big10"><svg width="34" height="60" viewBox="0 0 34 60" fill="none" stroke="#ff6b3d" stroke-width="3"><path d="M30 4C10 14 6 36 18 56M14 18l-8-4M12 30l-9-1M14 42l-8 3"/></svg><span class="n">12+</span><svg width="34" height="60" viewBox="0 0 34 60" fill="none" stroke="#ff6b3d" stroke-width="3"><path d="M4 4c20 10 24 32 12 52M20 18l8-4M22 30l9-1M20 42l8 3"/></svg></div>
+      <p>Festival selections and industry awards for title design, 3D animation and brand films since 2018.</p>
+      <a class="more" href="#">See all recognition →</a>
+    </div>
+    <ul class="alist">
+      <li><span class="i">01</span><div><strong>Best Title Sequence</strong><span class="o">Northern Lights Film Days</span></div><span class="y">2026</span></li>
+      <li><span class="i">02</span><div><strong>Gold — Motion Branding</strong><span class="o">Baltic Design Awards</span></div><span class="y">2025</span></li>
+      <li><span class="i">03</span><div><strong>Official Selection</strong><span class="o">Frame by Frame Festival</span></div><span class="y">2024</span></li>
+      <li><span class="i">04</span><div><strong>Jury Mention</strong><span class="o">Pixel Harbour</span></div><span class="y">2023</span></li>
+      <li><span class="i">05</span><div><strong>Young Talent Award</strong><span class="o">Loop Society</span></div><span class="y">2021</span></li>
+      <li><span class="i">06</span><div><strong>Student Grand Prix</strong><span class="o">Animation Academy</span></div><span class="y">2018</span></li>
+    </ul>
+  </div>
+</section>
+
+<section class="blk" id="process">
+  <div class="wrap proc">
+    <div>
+      <div class="lbl">03 / Under the hood</div>
+      <h2 class="disp" style="margin-top:14px">From sketch.<br><span class="acc">To screen.</span></h2>
+      <p>Every shot starts as a grey wireframe. Drag the handle to see how lighting, texture and grading turn it into the final frame.</p>
+      <div class="lbl">Shot 14 — Tidewater opening</div>
+    </div>
+    <div class="ba">
+      <img src="img/wire.svg" alt="Wireframe version of the shot" width="1200" height="640">
+      <img class="after" src="img/render.svg" alt="Final rendered version of the shot" width="1200" height="640">
+      <span class="tag" style="left:14px">WIREFRAME</span><span class="tag" style="right:14px">FINAL</span>
+      <span class="div"></span><span class="knob"></span>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="about">
+  <div class="wrap">
+    <div class="lbl">04 / About</div>
+    <h2 class="disp" style="font-size:clamp(52px,6vw,84px);margin:14px 0 40px">Behind <span class="acc">the frames.</span></h2>
+    <div class="two">
+      <div>
+        <p style="color:#b9bdc9;margin:0;max-width:460px">I studied illustration before falling for animation. Today I direct small teams and still keyframe most shots myself — the details are the fun part.</p>
+        <ul class="edu">
+          <li><b>MA Animation</b><span>Estonian Academy of Arts · 2017</span></li>
+          <li><b>BA Illustration</b><span>Riga School of Design · 2015</span></li>
+          <li><b>Workshops</b><span>Houdini, lighting, colour grading</span></li>
+        </ul>
+        <div class="lbl">Toolkit</div>
+        <div class="tools"><span class="t">Cinema 4D</span><span class="t">Houdini</span><span class="t">After Effects</span><span class="t">Blender</span><span class="t">Redshift</span><span class="t">DaVinci</span><span class="t">Figma</span><span class="t">Nuke</span></div>
+        <div class="sw"><span class="ic" style="background:#8fe3b5">C4</span><span class="ic" style="background:#f6c48d">Hd</span><span class="ic" style="background:#a99cf5">Ae</span><span class="ic" style="background:#6aa7ff">Bl</span><span class="ic" style="background:#f4a3b8">Rs</span></div>
+      </div>
+      <div>
+        <ol class="tl">
+          <li><span class="num">01</span><b>Listen</b><span>A short call to understand the story and the audience.</span></li>
+          <li><span class="num">02</span><b>Board</b><span>Style frames and an animatic before anything moves.</span></li>
+          <li><span class="num">03</span><b>Build</b><span>Modelling, rigging and the first animation passes.</span></li>
+          <li><span class="num">04</span><b>Polish</b><span>Lighting, texture and colour.</span></li>
+          <li><span class="num">05</span><b>Deliver</b><span>Masters and social cut-downs, on time.</span></li>
+        </ol>
+        <div class="quote"><p>“Good motion is invisible until you take it away.”</p><small>— A NOTE PINNED ABOVE MY DESK</small></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="journey">
+  <div class="wrap">
+    <div class="lbl">05 / The journey</div>
+    <h2 class="disp" style="font-size:clamp(52px,6vw,84px);margin:14px 0 40px">Small steps. <span class="acc">Big loops.</span></h2>
+    <div class="journey">
+      <span class="vline"></span>
+      <ul class="jent">
+        <li><span class="yr">2023 — now</span><div><b>Independent director</b><span>Titles &amp; brand films</span></div></li>
+        <li><span class="yr">2020 — 2023</span><div><b>Lead animator</b><span>Harbourlight Studio</span></div></li>
+        <li><span class="yr">2018 — 2020</span><div><b>3D generalist</b><span>Kestrel Motion</span></div></li>
+        <li><span class="yr">2017 — 2018</span><div><b>Junior designer</b><span>Freelance</span></div></li>
+      </ul>
+      <ul class="jent">
+        <li><span class="yr">Milestone</span><div><b>First festival title</b><span>2019</span></div></li>
+        <li><span class="yr">Milestone</span><div><b>100th loop shipped</b><span>2021</span></div></li>
+        <li><span class="yr">Milestone</span><div><b>Studio of two</b><span>2024</span></div></li>
+        <li><span class="yr">Milestone</span><div><b>Teaching at the academy</b><span>2025</span></div></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="contact">
+  <div class="wrap contact">
+    <div>
+      <div class="lbl">06 / Your next story</div>
+      <h2 class="disp" style="margin-top:14px">Let's make<br><span class="acc">it move.</span></h2>
+      <p>Have a film, a launch or a loop in mind? Tell me about it.</p>
+      <a class="btn" href="mailto:hello@ilka-marron.example">Start a project ↗</a>
+    </div>
+    <ul class="rows">
+      <li><span class="ic">✉</span><div><small>EMAIL</small><a href="mailto:hello@ilka-marron.example">hello@ilka-marron.example</a></div></li>
+      <li><span class="ic">◎</span><div><small>INSTAGRAM</small><a href="#">@ilka.moves</a></div></li>
+      <li><span class="ic">☏</span><div><small>PHONE</small><a href="tel:+3725550142">+372 555 0142</a></div></li>
+      <li><span class="ic">⌖</span><div><small>STUDIO</small><a href="#">Tallinn, Estonia</a></div></li>
+    </ul>
+    <div class="reel" id="reel"><img src="img/reel.svg" alt="" width="900" height="600"><h4>Make it<br><span class="acc">feel real.</span></h4><span class="pb">▶</span></div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap"><span class="logo">ilka<b>.</b></span><span>© 2026 Ilka Marron (fictional demo)</span></div>
+</footer>
+
+<script>
+  // The page's own "Motion off" switch: the effect respects it via [data-motion="off"].
+  (function () {
+    var b = document.getElementById('motionToggle');
+    var off = false;
+    try { off = localStorage.getItem('demo-motion') === 'off'; } catch (e) {}
+    function apply() { document.documentElement.toggleAttribute('data-motion-off', off); b.textContent = off ? 'Motion off' : 'Motion on'; }
+    apply();
+    b.addEventListener('click', function () { off = !off; try { localStorage.setItem('demo-motion', off ? 'off' : 'on'); } catch (e) {} apply(); if (off && window.SwarmRebuild) window.SwarmRebuild.skip(); });
+  })();
+</script>
+<script src="../swarm-rebuild.js"></script>
+<script>
+  SwarmRebuild.start({ mode: 'fast', motionOffSelector: '[data-motion-off]' });
+</script>
+</body>
+</html>
