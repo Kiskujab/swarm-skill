@@ -4,6 +4,13 @@
 
 **Jelölések.** [LÁTOTT] = a kockákon közvetlenül látszik. [FELTÉTELEZÉS] = következtetés, a videó nem mutatja meg. A színek és méretek a képernyőt filmező kamerából becsültek, ezért csak közelítők.
 
+> **Ez a videó leírása, nem a termék specifikációja.** Ahol a skill (SKILL.md) mást mond, az a mérvadó. A leírás óta született döntések és eltérések:
+> - **Hang nincs.** A videón látható hangszóró-gomb kimaradt, a modulban nincs hangkód.
+> - **A vezérlősáv nem alul középen van**, hanem a jobb szélen (kompakt, összecsukható; `controlsPosition: right | left | bottom`), mobilon egy kis fül egy szabad sarokban, ami nem takarja a fix sávokat, telefonszám-linkeket és gombokat.
+> - **Az ügynökök a nézetet követik:** csak a látható részt és legfeljebb fél képernyőnyit alatta építenek. Kézi görgetésre a tour leáll, és az építés oda megy, ahová a látogató néz (lásd 8.2 és 8.7).
+> - **Termékdöntés:** a fő mód a látogató görgetése által hajtott `scroll`; a vezérlősáv és a tour csak teszt- és felvételi eszköz. (A modul v1.0.1-ben a sáv még minden módban látszik, ennek kikapcsolása a következő körök feladata.)
+> - A demón 212 réteg van 6,6 képernyőnyi oldalon (a videón 364 réteg, 7,1 képernyő).
+
 ---
 
 ## 0. Röviden (ezt olvasd el először)
@@ -28,7 +35,8 @@
 - Kockák kivágása (az `fNNNN.jpg` az (NNNN−1). kocka):
   `ffmpeg -i VIDEO.mp4 -vf "crop=930:500:90:690" -q:v 3 frames/f%04d.jpg`
 - Kontaktlap (6 kocka egy képen, a 0–50. kocka 10-esével):
-  `ffmpeg -i VIDEO.mp4 -vf "crop=930:500:90:690,select='between(n,0,50)*not(mod(n,10))',scale=760:-1,tile=2x3" -frames:v 1 -vsync 0 sheet.png`
+  `ffmpeg -i VIDEO.mp4 -vf "crop=930:500:90:690,select='between(n,0,50)*not(mod(n,10))',scale=760:-1,tile=2x3" -frames:v 1 -fps_mode passthrough sheet.png`
+  (a régi `-vsync 0` kapcsoló az ffmpeg 5.1 óta elavult, helyette `-fps_mode passthrough` kell)
 - Érdemes megnézni (kocka): **0, 20, 26, 30, 36, 40, 44, 48, 52, 56, 60, 66** (nyitány); **100–144** (menü klónozása); **150–168** (címsor gépelése és nagyítása); **266–286** (kártyák klónozása); **360–405** (logósor); **495–555** (díjlista); **795** (előtte/utána csúszka); **1155, 1335** (vonalzók újra); **1560–1690** (befejezés).
 
 ---
@@ -186,12 +194,12 @@ A görgetősáv csúszkájából mérve (a lap kb. **7,1 nézetmagasság** hossz
 A videó ezeket nem mutatja meg. Ahol nem derül ki, ezeket használd, és jegyezd fel a jelentésben.
 
 1. **Mi indítja az építést?** Nem látszik. Alap: oldalbetöltés után automatikusan (0,8 s szkennelés), opcióként gombról vagy URL-paraméterrel (`?rebuild=1`).
-2. **Mit csinál a Tour, ha ki van kapcsolva?** Alap: nincs automata görgetés; az ügynökök a nézetben és az alatta lévő ≤1 nézetmagasságnyi rétegeket építik, a látogató görgethet, és az építés követi. (Ez a "görgetésre induló" változat, amit eredetileg kerestünk.)
+2. **Mit csinál a Tour, ha ki van kapcsolva?** Alap: nincs automata görgetés; az ügynökök a nézetben és az alatta lévő ≤1 nézetmagasságnyi rétegeket építik, a látogató görgethet, és az építés követi. (Ez a "görgetésre induló" változat, amit eredetileg kerestünk.) **A skillben:** legfeljebb 0,5 nézetmagasság a nézet alatt; ha a látogató üres részre görget, az indul először, gyorsabban és több ügynökkel.
 3. **`1×` gomb:** valószínűleg sebesség-váltó (1× → 2× → 4× → 1×), minden animációs időzítést skáláz.
-4. **Hangszóró:** valószínűleg effekt-hangokat (gépelés, kattintás) kapcsol. A hang nem része ennek a leírásnak. Alap: néma, opcionális.
+4. **Hangszóró:** valószínűleg effekt-hangokat (gépelés, kattintás) kapcsol. A hang nem része ennek a leírásnak. **Döntés: a termékben nincs hang, a gomb is kimaradt.**
 5. **`✕`:** megszakít, azonnal megmutatja a kész oldalt, a sáv eltűnik.
 6. **`Go live`:** kilép az előadásból, a sáv eltűnik, az oldal normálisan használható. **`Replay`:** újraindítja (a lap tetejére ugrik, `Scanning page…`).
-7. **Használható-e az oldal építés közben?** Nem látszik. Alap: a rétegek nem kattinthatók, a kézi görgetés megszakítja a Tourt (az ügynökök tovább dolgoznak).
+7. **Használható-e az oldal építés közben?** Nem látszik. Alap: a rétegek nem kattinthatók, a kézi görgetés megszakítja a Tourt (az ügynökök tovább dolgoznak). **A skillben:** kézi görgetés után az építés scroll módban folytatódik ott, ahol a látogató van; a `Tour` gomb újraindítja onnan.
 8. **A gyűrű sorsa:** nem látszik. Alap: lassan forog a `Go live` kattintásáig.
 9. **Mobil/érintőképernyő:** nem látszik. Alap: kevesebb ügynök (≤8), nincs vonalzó, vagy az effekt ki van kapcsolva.
 10. **Futási idő ügyfél-oldalon:** a videón az 51 mp bemutató-hossz. Valós oldalon ez túl hosszú. Alap: `speed` paraméter (1× = videó, 6× ≈ 9 s), és egy gyors mód.
