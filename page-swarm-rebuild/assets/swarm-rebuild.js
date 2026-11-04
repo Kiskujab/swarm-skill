@@ -1,11 +1,13 @@
 /*!
- * swarm-rebuild v1.2.0
+ * swarm-rebuild v1.3.0
  * "The page rebuilds itself": a swarm of agent cursors re-creates an existing
  * page layer by layer (frames, typing, image reveals, clone-and-rewrite),
  * following the visitor's scrolling. Free agents fly in swarms around a focus
  * element (damped springs, no perfect circles), the way to a task bends with
  * the weight of the element, bigger parts take longer, and on desktop agents
- * dodge the mouse pointer and follow it for a moment.
+ * dodge the mouse pointer and follow it for a moment. Only what is in view is
+ * built; text is typed by user-perceived characters in any language and
+ * writing direction; search engines and returning visitors get the page at once.
  *
  * - No dependencies, no network requests (except the optional debug add-on,
  *   swarm-rebuild-debug.js, loaded only with ?rebuild-debug=1 or debug: true).
@@ -25,7 +27,7 @@
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   if (window.SwarmRebuild && window.SwarmRebuild.version) return;
 
-  var VERSION = '1.2.0';
+  var VERSION = '1.3.0';
   var LAYER = 'swarm-rebuild';
   var HIDE_ID = 'swarm-rebuild-hide';
   var REVEAL_ID = 'swarm-rebuild-reveal';
@@ -64,6 +66,8 @@
     speed: null,             // base time scale; null = per mode (tour 1, fast 6, scroll 3)
     agents: null,            // max agents; null = auto (layers/8, clamped 10..30)
     colors: PALETTE,
+    palette: 'pastel',       // 'pastel' (the colours above) | 'page': agent colours taken from the page's own buttons, links
+                             // and headings (falls back to pastel when the page has fewer than two clear colours)
     exclude: '',             // CSS selector: shown immediately, never animated
     instant: 'a[href^="tel:"],[data-swarm-instant]', // shown immediately (phone, booking...)
     sectionSelector: 'header,section,footer,[data-swarm-section]',
@@ -509,6 +513,7 @@
       });
       if (q.get('rebuild-focus')) o.focus = q.get('rebuild-focus');
       if (q.get('rebuild-visible')) o.buildVisible = parseFloat(q.get('rebuild-visible'));
+      if (q.get('rebuild-palette')) o.palette = q.get('rebuild-palette');
     }
     var force = o.force || q.get('rebuild') === '1';
     var skip = q.get('rebuild') === '0' || isBot() || reducedMotion() || motionOff(o) || (typeof o.skipIf === 'function' && o.skipIf());
@@ -572,6 +577,7 @@
     st.openScale = Math.min(st.speedBase, 3);
     st.scanDur = 0.85 / st.openScale;
     st.bg = pageBg();
+    if (o.palette === 'page') { var pc = pagePalette(st.bg); if (pc) o.colors = pc; }
     st.vw0 = window.innerWidth;
     if (st.touring) { window.scrollTo({ top: 0, left: 0, behavior: 'instant' }); }
     st.camY = window.scrollY;
@@ -600,6 +606,39 @@
     st.timers.push(setInterval(function () { if (S === st && !st.dead) { try { watch(st); } catch (err) { fail(st, err); } } }, 1000));
   }
 
+  // the page's brand colours: saturated colours of buttons, links and headings, the most used first, clearly
+  // different hues, made readable against the page background
+  function rgbOf(c) { var m = /rgba?\(([^)]+)\)/.exec(c || ''); if (!m) return null; var p = m[1].split(/[\s,\/]+/).filter(Boolean).map(parseFloat); return p.length >= 3 && (p.length < 4 || p[3] > 0.5) ? p.slice(0, 3) : null; }
+  function hsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    var mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn, h = 0, s2 = 0;
+    if (d) { s2 = d / (1 - Math.abs(2 * l - 1)); h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h = (h * 60 + 360) % 360; }
+    return [h, s2, l];
+  }
+  function pagePalette(bg) {
+    var seen = [], els;
+    try { els = document.body.querySelectorAll('a,button,[role="button"],h1,h2,h3,[class*="btn"],[class*="button"],[class*="badge"],[class*="accent"]'); } catch (e) { return null; }
+    for (var i = 0; i < els.length && i < 400; i++) {
+      var cs = getComputedStyle(els[i]);
+      [cs.backgroundColor, cs.color, cs.borderTopColor].forEach(function (c, k) {
+        var v = rgbOf(c); if (!v) return;
+        var x = hsl(v[0], v[1], v[2]);
+        if (x[1] < 0.28 || x[2] < 0.18 || x[2] > 0.9) return; // greys, near black / white
+        for (var j = 0; j < seen.length; j++) { var dh = Math.abs(seen[j].h - x[0]); if (Math.min(dh, 360 - dh) < 24) { seen[j].n += k ? 1 : 2; return; } }
+        seen.push({ h: x[0], s: x[1], l: x[2], n: k ? 1 : 2 });
+      });
+    }
+    if (!seen.length) return null;
+    seen.sort(function (a, b) { return b.n - a.n; });
+    seen = seen.slice(0, 6);
+    // one or two brand colours: neighbouring hues of the main one fill up the set (a family of shades, not random colours)
+    for (var k = 1; seen.length < 5 && k <= 4; k++) { var c0 = seen[0]; seen.push({ h: (c0.h + (k % 2 ? 1 : -1) * 22 * Math.ceil(k / 2) + 360) % 360, s: c0.s, l: c0.l, n: 0 }); }
+    var bl = rgbOf(bg), dark = bl ? hsl(bl[0], bl[1], bl[2])[2] < 0.45 : true;
+    return seen.map(function (c) {
+      var l = dark ? Math.max(c.l, 0.62) : Math.min(c.l, 0.48); // readable on the page's own background
+      return 'hsl(' + Math.round(c.h) + ',' + Math.round(Math.min(1, Math.max(c.s, 0.55)) * 100) + '%,' + Math.round(l * 100) + '%)';
+    });
+  }
   function pageBg() {
     var b = getComputedStyle(document.body).backgroundColor;
     if (alphaOf(b) > 0.5) return b;
@@ -2450,7 +2489,7 @@
       aboveSkips: st.aboveSkips, offSkips: st.offSkips, depSkips: st.depSkips, aborts: st.aborts,
       buildVisible: st.vmin, startVis: st.startVis.n ? { n: st.startVis.n, min: +st.startVis.min.toFixed(3), avg: +(st.startVis.sum / st.startVis.n).toFixed(3) } : null,
       inView: st.phase === 'build' ? inViewWork(st) : null, errors: st.errors, holes: (st.holes || []).length,
-      lite: !!st.lite, liteFps: !!st.liteFps, mouseOn: !!st.mouseOn, focus: st.focusInfo, diff: st.diff || null, swarms: (st.swarms || []).map(function (s) { var c = 0; st.agents.forEach(function (a) { if (a.active && a.swarm === s) c++; }); return c; }),
+      lite: !!st.lite, liteFps: !!st.liteFps, colors: st.o.colors, mouseOn: !!st.mouseOn, focus: st.focusInfo, diff: st.diff || null, swarms: (st.swarms || []).map(function (s) { var c = 0; st.agents.forEach(function (a) { if (a.active && a.swarm === s) c++; }); return c; }),
       mouse: { dodges: st.mz.dodges, follows: st.mz.follows.length, minD: st.mz.minD, following: st.mfollow },
       fault: st.fault ? { kind: st.fault.kind, fired: st.fault.fired, task: st.fault.task || null } : null
     };
@@ -2498,6 +2537,7 @@
     if (ds.debug === '' || ds.debug === 'true') opts.debug = true;
     if (ds.debugSrc) opts.debugSrc = ds.debugSrc;
     if (ds.focus) opts.focus = ds.focus;
+    if (ds.palette) opts.palette = ds.palette;
     if (ds.once === 'false') opts.once = false;
     var go = function () { start(opts); };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();

@@ -5,6 +5,8 @@ description: Adds the "page rebuilds itself" effect to an existing website (plai
 
 # page-swarm-rebuild
 
+Version 1.3.0 (module, add-on, stylesheet and this file; see `CHANGELOG.md` in the repository; `SwarmRebuild.version`).
+
 Presentation-only intro effect. The page's real DOM is never modified: layers are hidden and revealed with one
 cascade-layered stylesheet in `<head>`, all animation happens in an overlay appended to `<html>`, and both are removed
 at the end. No dependencies, no network requests (GDPR-friendly), no layout shift, no sound, and the page is never left
@@ -36,6 +38,7 @@ and this file disagree, this file wins (product decisions were made after the de
 | `scripts/build-min.cjs` | Builds the `.min` files and checks the size budget (needs terser and csso from npm). |
 | `scripts/perf.cjs` | Lighthouse metrics (LCP, CLS, TBT, Speed Index, accessibility, SEO) with and without the effect. |
 | `scripts/sync-snippet.cjs` | Copies the module's head snippet into the React wrapper, SKILL.md and the test pages. |
+| `scripts/record-video.cjs` | Records the effect as an .mp4 / .webm for a portfolio (the debug tour, control bar hidden). |
 | `scripts/project.cjs` | Installs the effect into a project with a backup in `legacy/`, removes it again, restores the originals. |
 | `scripts/test-project.cjs` | Tests the installer: backup, restore after a broken project (hash-identical), uninstall. |
 
@@ -315,6 +318,7 @@ Working example: `tests/pages/nextjs/`.
 | `speed` | per mode | base time scale (1 = video timing); scroll 3, fast 6, tour 1 |
 | `agents` | auto | max agents; auto = layers/8 clamped to 10..30 (mobile <= 8). Starts at 60 % and grows per section. |
 | `colors` | pastel set | agent colours (teal, pink, peach, lavender, sky, mint, white) |
+| `palette` | `'pastel'` | `'page'`: agent colours from the page's own buttons, links and headings (one brand colour gives a family of neighbouring hues; made readable on the page background; falls back to pastel); `data-palette`, `?rebuild-palette=page` (debug) |
 | `exclude` | `''` | selector: shown immediately, never animated |
 | `instant` | `a[href^="tel:"],[data-swarm-instant]` | selector: shown immediately |
 | `sectionSelector` | `header,section,footer,[data-swarm-section]` | top-level bands |
@@ -400,6 +404,14 @@ difference. The demo has 214 layers since 1.0.1 (212 before).
 Typical fixes: a section is too dense or a widget behaves oddly -> add it to `exclude`; a bar should never be animated ->
 `data-swarm-instant`; the page uses its own scroll-reveal animations (elements start at opacity 0) -> those elements are
 skipped by the scan and appear when the page animates them, which is expected.
+
+### Demo video (portfolio, client presentation)
+```bash
+node $S/scripts/record-video.cjs --url http://localhost:3000/ --out swarm-demo.mp4            # whole page, 1x tour
+node $S/scripts/record-video.cjs --url http://localhost:3000/ --speed 3 --palette page --out short.mp4
+node $S/scripts/record-video.cjs --url http://localhost:3000/ --device mobile --mode scroll --out phone.mp4
+```
+The tour is a debug / recording tool only; visitors never get it.
 
 ### 5. Report
 Tell the user: mode and options chosen, files added/changed, verify results (build time, layers, agents, fps, DOM/pixel

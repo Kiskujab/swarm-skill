@@ -1,4 +1,4 @@
-/* swarm-rebuild v1.1.0 — overlay styles. Everything is scoped under #swarm-rebuild-root.
+/* swarm-rebuild v1.3.0 — overlay styles. Everything is scoped under #swarm-rebuild-root.
    The debug control bar brings its own styles (swarm-rebuild-debug.js). */
 #swarm-rebuild-root {
   --sr-blue: #2f8fff;
