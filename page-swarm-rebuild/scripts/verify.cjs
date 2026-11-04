@@ -745,7 +745,13 @@ function fixedTargets() {
       const n = fr.length ? fr[0].a.length : 0;
       const cvs = [], radial = [];
       for (let i = 0; i < n; i++) cvs.push(cv(speeds(fr, i)));
-      fr.forEach((f) => { if (f.o) f.a.forEach((a) => radial.push(Math.hypot((a.x - f.o.x) / f.o.rx, (a.y - f.o.y) / f.o.ry))); });
+      // distance of every swarm (its centre) from the focus, in orbit radii: on a perfect circle all would be equal
+      fr.forEach((f) => {
+        if (!f.o) return;
+        const g = {};
+        f.a.forEach((a) => { const c = g[a.sw] || (g[a.sw] = { x: 0, y: 0, n: 0 }); c.x += a.x; c.y += a.y; c.n++; });
+        Object.values(g).forEach((c) => radial.push(Math.hypot((c.x / c.n - f.o.x) / f.o.rx, (c.y / c.n - f.o.y) / f.o.ry)));
+      });
       const rm = mean(radial), rsd = rm ? Math.sqrt(mean(radial.map((x) => (x - rm) * (x - rm)))) : 0;
       const sizes = s.swarms || [];
       report.motion.opening = { frames: fr.length, agents: n, focus: s.focus && s.focus.open, swarms: sizes, speedCv: r3(med(cvs)), radialMean: r3(rm), radialSd: r3(rsd) };
@@ -753,7 +759,7 @@ function fixedTargets() {
         fr.length >= 8 && sizes.length >= (MOBILE ? 2 : 3) && new Set(sizes).size > 1 && rm > 0.5 && rm < 1.6,
         fr.length + ' frames, swarms ' + JSON.stringify(sizes) + ', mean distance ' + r3(rm) + ' orbit radii');
       check('motion: opening — speeds change (accelerate / slow down) and the path is not a perfect circle', med(cvs) > 0.15 && rsd > 0.1,
-        'speed variation (CV) ' + r3(med(cvs)) + ', spread of the distance to the focus ' + r3(rsd) + ' orbit radii');
+        'speed variation (CV) ' + r3(med(cvs)) + ', spread of the swarms\' distance to the focus ' + r3(rsd) + ' orbit radii');
       check('motion: opening — no errors', !bag.length && !bag.fallbacks.length, (bag.concat(bag.fallbacks)).slice(0, 3).join(' | '));
       await ctx.close();
     }

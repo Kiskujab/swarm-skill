@@ -46,7 +46,32 @@ Tests and tools
 - run-tests.cjs: motion summary lines; longer time limit for the long runs.
 - tests/index.html: a "motion extras off (compare)" link per page.
 
-MEASUREMENTS
+Measurements (same cloud container, no GPU, interleaved with 1.1.0 = commit 5be439c, `bench-fps.cjs`)
+
+| device | page | mode | fps 1.1.0 -> 1.2.0 | build time s 1.1.0 -> 1.2.0 |
+|---|---|---|---|---|
+| desktop | demo | tour | 58.4 -> 58.4 | 44.0 -> 43.3 |
+| desktop | demo | tour 6x | 52.3 -> 55.1 | 9.1 -> 9.2 |
+| desktop | demo | scroll | 53.9 -> 55.2 | 9.2 -> 9.0 |
+| desktop | demo | fast | 54.0 -> 55.5 | 8.2 -> 8.2 |
+| desktop | dental | tour | 59.9 -> 59.9 | 33.4 -> 30.8 |
+| desktop | dental | tour 6x | 57.8 -> 57.5 | 7.0 -> 7.0 |
+| desktop | dental | scroll | 55.6 -> 54.3 (5 runs each) | 7.0 -> 6.4 |
+| desktop | dental | fast | 56.0 -> 55.7 (5 runs each) | 6.1 -> 6.1 |
+| mobile | demo / dental | all four | 59–60 -> 59–60 | within ±5 % (dental tour 46.6 -> 44.3) |
+
+- Build time within ±10 % everywhere (largest: dental scroll -8 %, dental tour -8 %: small parts finish sooner).
+- fps: equal or higher except dental desktop scroll, -1.3 fps (-2.3 %), seen in every repeat; switching off each new
+  part (`?rebuild-motion=`) did not change it beyond the run-to-run spread (±1.5 fps), so the cause is not found.
+  Two real costs were found and removed on the way: trails on idle agents and their constant micro-motion (~1 fps).
+- CLS 0.0000 in all 15 suite runs, body DOM identical, 0.000 % pixel difference, fixed elements never covered (8–17
+  pixel samples per page), above-the-view probes 0 not final.
+- Motion (verify `motion`, demo / dental / Next.js): finale overshoot 3–18 % of the way, top speed within 0.15 s;
+  gravity sag of horizontal moves 3.5–7.6 % of the distance (heavy elements 9.6–14.5 %, light 3.5–4 %), vertical
+  moves 0 %, never more than 56 px; difficulty: rank correlation area ~ work 0.75–0.89 within one kind of task;
+  mouse: closest 36 px, follow 1.38–1.68 s when the pointer leaves at 120 px/s, 0.84–0.99 s at 1300 px/s.
+- Size for visitors: 116.5 + 7.5 KB raw, 36.5 + 2.0 KB gzip (1.1.0: 95.9 + 7.5 KB, 28.9 + 2.0 KB gzip); the debug
+  add-on 31.5 KB (8.8 KB gzip), not loaded for visitors.
 
 ## 1.1.0 — 2026-11-04 — product behaviour, protection, test pages online
 
