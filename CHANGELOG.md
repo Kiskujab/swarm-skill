@@ -1,5 +1,54 @@
 # Changelog
 
+## 1.3.0 — 2026-11-05 — visible-only build, any language, safe install
+
+Module (`assets/`)
+- **Scroll mode builds only what is in view.** An element starts when at least `buildVisible` (new option, 0.6) of its
+  height is on screen (of the screen for taller elements, so they build from the top down); the "view + half a viewport
+  ahead" rule is gone. Running tasks that scroll out of view are completed at once (also below the view), mostly hidden
+  ones are fast-forwarded, working agents are kept on screen, rows of copies copy only the members in view (the rest
+  later; a far-away master card no longer makes an invisible trip). Unbuilt parts across the top edge with less than the
+  start share in view are final at once. Measured with the same probe, demo desktop: 1.2.0 started 58 of 120 parts
+  under 60 % in view (many at 0 %) and had working agents off screen in 42 % of the samples; 1.3.0: every start
+  60-100 % in view (median 100 %), no agent off screen; after fast scrolls the view is filled in 0.4-2.4 s (average
+  1.1-1.5 s).
+- **Resting agents never cluster:** an agent without work rests at its own spot in view (72 px from the others),
+  drifts slowly and fades out after 1.4 s; it fades in with its next task; swarms stay for the opening and the finale.
+  Overlapping idle cursors per frame: 1.2.0 median 6 (up to 20) on the demo, 1.3.0 median 0 (3 or more in at most
+  0.4 % of the frames).
+- **Any language and writing direction:** typing by grapheme clusters (`Intl.Segmenter`, with a fallback): accents,
+  emoji ZWJ sequences, skin tones, flags, Arabic / Hebrew marks are never split. Right-to-left elements: frames grow
+  from the right, lines from right to left, the caret sits left of the last typed letter, left-to-right runs (numbers,
+  e-mail addresses) inside RTL text are typed as a whole; the overlay is always laid out left to right. Numbers in any
+  script count as numbers. Nothing assumes English (the screen-reader message comes in 19 languages).
+- **Real-world pages:** parts not shown at the scan (carousel slides, tabs, menus, modals) are final at once, so they
+  appear complete when the page shows them; scroll-reveal sections (opacity 0 until in view) are built like the rest.
+- **Search engines and accessibility:** crawlers (Googlebot, Bingbot, link previews ...) never get the effect (head
+  snippet and module); screen readers get a status message in the page's language while the content is hidden (new
+  option `a11yText`), outside `<body>`, removed at the end.
+- **Brand colours:** new option `palette: 'page'` takes the agent colours from the page's buttons, links and headings.
+- **Minified builds** `swarm-rebuild.min.js`, `swarm-rebuild-debug.min.js`, `swarm-rebuild.min.css`: a visitor
+  downloads 28.3 KB + 1.6 KB gzip (the readable source would be 42.4 KB); budget 30 + 2 KB.
+- Performance: the grapheme / direction work is done only for texts that are typed (it cost 1.8 fps in the 6x tour).
+
+Scripts
+- `project.cjs` install / uninstall / restore / list: every file is backed up to `legacy/<date-time>-<action>/` first
+  (`backup.txt`, `manifest.json`, `.orig` copies); insertions are marked, uninstall removes exactly them and keeps later
+  edits, restore gives back the original bytes (SHA-256 checked); legacy/ is git-ignored and never built.
+  `test-project.cjs`: four sample projects (HTML, Next.js App / Pages Router, Vite + React) broken on purpose and
+  restored hash-identical, uninstall, a Next.js build with legacy/ present, the effect in a browser after install and no
+  trace after uninstall.
+- `verify.cjs`: new groups `visible` (start share, agents off screen, fill time after fast scrolls, idle clusters,
+  contact sheet), `text` (no split characters, caret side), `a11y` (crawlers, aria-hidden overlay, status message, no
+  focus trap); options `--consent`, `--color-scheme`, `--dom-volatile`, `--settle`; the reference page is read once
+  before its screenshot, videos are paused for screenshots, the fixed-element pixel test waits for scrolling to stop.
+- `perf.cjs` (Lighthouse with / without the effect), `build-min.cjs` (minified files + size budget),
+  `record-video.cjs` (an .mp4 of the effect for a portfolio), `sync-snippet.cjs` (head snippet copies).
+- `run-tests.cjs`: 11 test pages (new: law, accounting, Bootstrap 5, single-page app, Hungarian, Arabic, Japanese,
+  emoji) plus the installer test.
+
+Measurements: see STATUS.md ("Task 4" and the final suite).
+
 ## 1.2.0 — 2026-11-04 — more natural motion
 
 Module (`assets/`)
