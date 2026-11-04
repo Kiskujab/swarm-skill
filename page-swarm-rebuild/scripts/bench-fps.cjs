@@ -4,7 +4,8 @@
  * runs interleaved (old, new, old, new ...) so that machine load affects both alike.
  *
  *   node scripts/bench-fps.cjs [--old-ref v1.0.1 | --old <path to an old swarm-rebuild.js>]
- *                              [--pages demo,dental] [--devices desktop,mobile] [--reps 3] [--timeout 1800]
+ *                              [--pages demo,dental] [--devices desktop,mobile] [--modes tour,tour6,scroll,fast]
+ *                              [--reps 3] [--timeout 1800]
  *
  * Modes compared (old -> new):
  *   tour      auto-scroll at 1x                    old: mode tour     new: ?rebuild-debug=1, mode tour
@@ -31,6 +32,7 @@ process.argv.slice(2).forEach((a, i, arr) => { if (a.startsWith('--')) args[a.sl
 const PAGES = String(args.pages || 'demo,dental').split(',');
 const DEVICES = String(args.devices || 'desktop').split(',');
 const REPS = Number(args.reps || 3);
+const ONLY = args.modes ? String(args.modes).split(',') : null;
 const OUT = path.join(os.tmpdir(), 'page-swarm-rebuild-bench');
 const killer = setTimeout(() => { console.error('bench: time limit reached'); process.exit(3); }, Number(args.timeout || 1800) * 1000);
 
@@ -109,7 +111,7 @@ server.listen(0, '127.0.0.1', async () => {
   }
   for (const device of DEVICES) {
     for (const page of PAGES) {
-      for (const mode of Object.keys(MODES)) {
+      for (const mode of Object.keys(MODES).filter((m) => !ONLY || ONLY.includes(m))) {
         const r = { device, page, mode, old: [], new: [] };
         for (let k = 0; k < REPS; k++) {
           for (const ver of ['old', 'new']) { const x = await once(ver, page, device, mode); if (x) r[ver].push(x); }

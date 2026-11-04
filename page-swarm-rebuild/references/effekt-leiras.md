@@ -6,9 +6,10 @@
 
 > **Ez a videó leírása, nem a termék specifikációja.** Ahol a skill (SKILL.md) mást mond, az a mérvadó. A leírás óta született döntések és eltérések:
 > - **Hang nincs.** A videón látható hangszóró-gomb kimaradt, a modulban nincs hangkód.
-> - **A vezérlősáv nem alul középen van**, hanem a jobb szélen (kompakt, összecsukható; `controlsPosition: right | left | bottom`), mobilon egy kis fül egy szabad sarokban, ami nem takarja a fix sávokat, telefonszám-linkeket és gombokat.
-> - **Az ügynökök a nézetet követik:** csak a látható részt és legfeljebb fél képernyőnyit alatta építenek. Kézi görgetésre a tour leáll, és az építés oda megy, ahová a látogató néz (lásd 8.2 és 8.7).
-> - **Termékdöntés:** a fő mód a látogató görgetése által hajtott `scroll`; a vezérlősáv és a tour csak teszt- és felvételi eszköz. (A modul v1.0.1-ben a sáv még minden módban látszik, ennek kikapcsolása a következő körök feladata.)
+> - **A látogató nem lát vezérlősávot és nem kap automata görgetést** (v1.1.0). A sáv és a tour a külön `swarm-rebuild-debug.js` kiegészítőben van, csak `?rebuild-debug=1` vagy `debug: true` mellett töltődik be. Ott a sáv nem alul középen van, hanem a jobb szélen (kompakt, összecsukható; `controlsPosition: right | left | bottom`), mobilon egy kis fül egy szabad sarokban.
+> - **A fő és alapértelmezett mód a `scroll`:** az ügynökök a nézetet követik, csak a látható részt és legfeljebb fél képernyőnyit alatta építenek (lásd 8.2 és 8.7). A `fast` ugyanez kétszeres sebességgel; a videó szerinti automata görgetés (`tour`) csak debug módban van.
+> - **Kilépés látható gomb nélkül:** Esc, bármely billentyű, kattintás vagy koppintás azonnal a kész oldalt mutatja. A még kész nem lévő tartalomra eső kattintást a modul elnyeli (nem navigál), a kész tartalomra esőt átengedi.
+> - **Védelem:** ami kigördül a képernyő tetején, azonnal kész; hiba, megakadt feladat, leálló szkript (CSS-vészkapcsoló), átméretezés és háttérbe kerülés esetén is látható lesz az oldal; a rögzített elemekre az overlay nem rajzol.
 > - A demón 214 réteg van (a v1.0.1 előtt 212) 6,6 képernyőnyi oldalon (a videón 364 réteg, 7,1 képernyő).
 
 ---

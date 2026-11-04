@@ -354,7 +354,7 @@
     skip: function () { if (S) finishNow(S, 'api'); },
     goLive: function () { if (S) finishNow(S, 'api'); },
     replay: function () { if (S) replay(S); },
-    state: function () { return S ? snapshot(S) : { phase: 'idle', lastExit: api._lastExit || null }; },
+    state: function () { return S ? snapshot(S) : pending ? { phase: 'loading' } : { phase: 'idle', lastExit: api._lastExit || null }; },
     stats: function () { return S ? fpsStats(S) : (api._lastStats || null); },
     headSnippet: function () { return '<script>' + SNIPPET + '<\/script>'; },
     // test hook: freeze the animation (the dead-man switch keeps being refreshed)
