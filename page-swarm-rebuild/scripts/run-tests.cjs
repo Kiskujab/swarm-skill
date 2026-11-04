@@ -145,6 +145,15 @@ function verify(name, url, device, label, checks, extra) {
     }
   }
   const runs = [];
+  // the installer (backup, restore, uninstall) on sample projects
+  if (!args['no-project']) {
+    console.log('\n=== installer (scripts/test-project.cjs --browser)');
+    const tp = require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'test-project.cjs'), '--browser'], { encoding: 'utf8', timeout: 600000 });
+    const out = (tp.stdout || '') + (tp.stderr || '');
+    process.stdout.write(out);
+    const res = out.split('\n').filter((l) => /^(PASS|FAIL) /.test(l)).map((l) => ({ name: l.slice(5), ok: l.startsWith('PASS') }));
+    runs.push({ name: 'installer', device: '-', mode: 'install/restore/uninstall', checks: 'project', exit: tp.status, report: { results: res } });
+  }
   for (const [n, d, m, c, x] of plan) runs.push(await verify(n, urls[n], d, m, c, x)); // one at a time: fps is measured
   cleanup();
 

@@ -31,6 +31,8 @@ and this file disagree, this file wins (product decisions were made after the de
 | `scripts/bench-fps.cjs` | Frame rate of an older module version against the current one, same machine, interleaved runs. |
 | `scripts/build-site.cjs` | Builds the three test pages as one static site (GitHub Pages) or serves it on the local network. |
 | `scripts/next-app.cjs` | Helper: prepares / builds the Next.js test app in a temp folder. |
+| `scripts/project.cjs` | Installs the effect into a project with a backup in `legacy/`, removes it again, restores the originals. |
+| `scripts/test-project.cjs` | Tests the installer: backup, restore after a broken project (hash-identical), uninstall. |
 
 ## Product decisions (they override the reference video)
 
@@ -166,6 +168,21 @@ Arabic-Indic digits, a Hebrew quote), `lang-ja` (Japanese), `lang-emoji`. Known 
 
 ### 2. Install the module
 
+**Always with a backup first.** Use the installer; it saves every file it will change in the project's `legacy/`
+folder before it writes anything, and can take everything out again:
+
+```bash
+S=.claude/skills/page-swarm-rebuild   # or ~/.claude/skills/page-swarm-rebuild
+node $S/scripts/project.cjs install --project . --focus "#cta"     # detects Next.js (App / Pages Router), Vite + React, plain HTML
+node $S/scripts/project.cjs uninstall --project .                  # removes exactly what it added (later edits are kept)
+node $S/scripts/project.cjs restore --project .                    # the files exactly as before the install (SHA-256 checked)
+node $S/scripts/project.cjs list --project .                       # the backups
+```
+`--dry` shows what would change. Every insertion is marked `swarm-rebuild:start` / `swarm-rebuild:end`. If the project
+does not fit (no `</body>` in the layout, a custom document...), the installer stops without changing anything; then
+install by hand as below, **after** saving the files you will change into `legacy/<YYYYMMDD-HHMMSS>-manual/files/<path>.orig`
+with a `backup.txt` (see Backup and removal).
+
 **Plain HTML** - copy `swarm-rebuild.js`, `swarm-rebuild.css` and `swarm-rebuild-debug.js` into one folder of the site
 (e.g. `/assets/swarm-rebuild/`), then:
 
@@ -207,6 +224,24 @@ Pages Router: put `<SwarmRebuildHead />` in `pages/_document.tsx` `<Head>` and `
 **React (Vite/CRA)**: paste the snippet into `index.html` `<head>` and render `<SwarmRebuild />` once in `App`.
 The wrapper starts the effect after mount only, is StrictMode-safe and imports the debug add-on only when asked.
 Working example: `tests/pages/nextjs/`.
+
+### Backup and removal (never lose anything)
+
+- Before any change (install, uninstall), the files about to change are saved in
+  `legacy/<YYYYMMDD-HHMMSS>-<action>/files/<path>.orig` with `manifest.json` (SHA-256 of every file) and `backup.txt`
+  (at most 1000 characters: what, when, which files, how to restore). node_modules, .git and build output (.next,
+  dist, build, out) are never saved (only the files the skill touches are).
+- `restore` writes the saved files back byte for byte and deletes what the install created, then checks the hashes.
+  `uninstall` removes only the marked insertions and the copied files, so edits made since are kept; it reports per
+  file whether it is identical to before the install. `uninstall --purge` also deletes `legacy/`.
+- **legacy/ never ships:** it is added to `.gitignore` (git-based deploys - Vercel, Netlify, GitHub Pages - never see
+  it); the `.orig` suffix keeps TypeScript, ESLint, Next.js, Vite and test runners away from the copies (they only
+  pick up `.ts/.tsx/.js/.jsx`); Next.js and Vite only bundle what is imported and only serve `public/`; a
+  `legacy/.htaccess` denies access if the folder is ever uploaded to an Apache host by hand. For hand uploads (FTP,
+  rsync) leave it out: `rsync -a --exclude legacy/ ./ host:/www/`.
+- Tested by `scripts/test-project.cjs` (`--build` also builds a Next.js sample with legacy/ present, `--browser` opens
+  an HTML sample after install and uninstall): on four sample projects the project is broken on purpose after the
+  install, and restore gives back every file with the same hash.
 
 ### 3. Configure
 `SwarmRebuild.start(options)` / `<SwarmRebuild {...options} />` / `window.SwarmRebuildConfig = {...}`:
@@ -301,7 +336,8 @@ skipped by the scan and appear when the page animates them, which is expected.
 ### 5. Report
 Tell the user: mode and options chosen, files added/changed, verify results (build time, layers, agents, fps, DOM/pixel
 diff), anything excluded and why, how to test on the live site (`?rebuild=1`, `?rebuild-debug=1`) and how to turn it
-off (`?rebuild=0`, remove the snippet + script).
+off (`?rebuild=0` for one visit; `project.cjs uninstall` removes it for good; `restore` gives back the original files),
+and where the backup is (`legacy/<stamp>-install/backup.txt`).
 
 ## How it works (for debugging)
 - **Scan**: walks `body`, measures each element once (hide sheet briefly disabled in the same task, so nothing paints),

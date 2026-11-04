@@ -71,9 +71,9 @@ Order A, B, C, D, E, F, G, H; commit + push after every block. Full suite only o
 | A visible-only build (scroll mode) | done | `buildVisible` 0.6; verify group `visible` |
 | B idle agents never cluster | done | rest spots >= 72 px apart, fade after 1.4 s; verify check `idle` (in group `visible`) |
 | C language support | done | graphemes, RTL, 4 language pages, verify group `text`; Arabic CLS 0.0016 (overlay only, see decisions) |
-| D legacy backup | next | |
-| E one-command removal | open | |
-| F many realistic test pages | open | |
+| D legacy backup | done | `scripts/project.cjs` install / uninstall / restore / list; `scripts/test-project.cjs` |
+| E one-command removal | done | `project.cjs uninstall [--purge]`, hash-checked against the backup |
+| F many realistic test pages | next | |
 | G perf / SEO / a11y / minified build | open | |
 | H extras | open | |
 
@@ -116,6 +116,19 @@ Order A, B, C, D, E, F, G, H; commit + push after every block. Full suite only o
   0.1); all LTR pages, Japanese and emoji stay at 0.0000.
 - (C) RTL check of the caret: in the text check every frame (caret within 4 px of the end of the last typed character
   in its writing direction, or of the start edge before the first one).
+- (D) Backups hold only the files the skill touches (not a copy of the whole project): that is what can change, and it
+  never includes node_modules, .git or build output. Copies are stored as `<path>.orig` so TypeScript / Next.js /
+  Vite / ESLint never compile or lint them, legacy/ goes into .gitignore (git-based deploys never ship it), and a
+  `legacy/.htaccess` denies access on Apache hosts. Not changing tsconfig / next.config / vite.config on purpose:
+  fewer files touched, nothing to undo there.
+- (D) Insertions only, each wrapped in `swarm-rebuild:start` / `:end` markers; the exact inserted strings are kept in
+  the manifest, so uninstall gives back the original bytes and keeps edits made since. Vite + React: the component
+  gets its own small detached React root at the end of main.jsx (a pure insertion; wrapping `<App />` in a fragment
+  would have changed existing code). Projects that do not fit the patterns are refused with no change (manual
+  install documented, with a hand-made backup).
+- (D) Measured: 31/31 checks of test-project.cjs (4 sample projects, broken on purpose, restore hash-identical;
+  install + uninstall --purge byte for byte identical; a later hand edit survives uninstall; Next.js builds with
+  legacy/ present and nothing from it in .next; the HTML sample runs the effect and has no trace after uninstall).
 - (A) 1.2.0 measured with the same probe (demo desktop, reading down): 58 of 120 starts under 60 % in view (many at
   0 %), working agents off screen in 42 % of the samples. 1.3: 0 starts under 60 %, 0 off screen.
 
