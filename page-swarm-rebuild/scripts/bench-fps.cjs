@@ -51,7 +51,7 @@ if (args.old) {
   oldJs = fs.readFileSync(path.resolve(String(args.old)), 'utf8');
   oldCss = fs.readFileSync(path.resolve(String(args.old)).replace(/\.js$/, '.css'), 'utf8');
 } else {
-  const ref = String(args['old-ref'] || 'c332016') // c332016 = module 1.0.1;
+  const ref = String(args['old-ref'] || 'c332016'); // c332016 = module 1.0.1
   const git = (f) => execFileSync('git', ['show', ref + ':page-swarm-rebuild/assets/' + f], { cwd: SKILL, encoding: 'utf8', maxBuffer: 1 << 24 });
   oldJs = git('swarm-rebuild.js'); oldCss = git('swarm-rebuild.css');
 }
