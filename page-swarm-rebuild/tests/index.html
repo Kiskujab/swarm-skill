@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>page-swarm-rebuild test pages</title>
+<style>
+  :root { --bg: #f6f7f9; --fg: #17202c; --muted: #5d6877; --card: #fff; --line: #dfe3e9; --acc: #2f6fde; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0f1319; --fg: #e8edf4; --muted: #9aa6b5; --card: #171d26; --line: #2a3340; --acc: #6aa7ff; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 28px 16px 48px; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  p { color: var(--muted); margin: 0 0 14px; }
+  .page { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin: 16px 0; }
+  .page h2 { font-size: 19px; margin: 0 0 4px; }
+  .links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .links a { display: inline-block; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line); color: var(--acc); text-decoration: none; font-weight: 600; }
+  .links a.main { background: var(--acc); border-color: var(--acc); color: #fff; }
+  small { color: var(--muted); }
+  code { font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>page-swarm-rebuild — test pages</h1>
+  <p>All content is fictional. Every link starts the effect again (<code>rebuild=1</code>). <b>scroll</b> is what visitors get:
+    scroll down and the agents build what you look at. Any click or key shows the finished page at once.
+    The <b>debug</b> links add the control bar; <b>tour</b> scrolls by itself (for recordings).</p>
+  <p><small>Reduced motion turned on in your system settings means no effect at all (by design).</small></p>
+
+  <section class="page">
+    <h2>Demo — portfolio (dark)</h2>
+    <p>Long page with a sticky header, cards, a gallery and a contact list.</p>
+    <div class="links">
+      <a class="main" href="../assets/demo/index.html?rebuild=1&amp;rebuild-mode=scroll">scroll</a>
+      <a href="../assets/demo/index.html?rebuild=1&amp;rebuild-mode=fast">fast</a>
+      <a href="../assets/demo/index.html?rebuild=1&amp;rebuild-mode=tour&amp;rebuild-debug=1">tour (debug)</a>
+      <a href="../assets/demo/index.html?rebuild=1&amp;rebuild-mode=scroll&amp;rebuild-debug=1">scroll + debug bar</a>
+      <a href="../assets/demo/index.html?rebuild=0">without the effect</a>
+    </div>
+  </section>
+
+  <section class="page">
+    <h2>Dental practice — small business (light)</h2>
+    <p>Phone links, a booking form, a fixed “Call us” bar on phones and a fixed notice on desktop.</p>
+    <div class="links">
+      <a class="main" href="pages/dental/index.html?rebuild=1&amp;rebuild-mode=scroll">scroll</a>
+      <a href="pages/dental/index.html?rebuild=1&amp;rebuild-mode=fast">fast</a>
+      <a href="pages/dental/index.html?rebuild=1&amp;rebuild-mode=tour&amp;rebuild-debug=1">tour (debug)</a>
+      <a href="pages/dental/index.html?rebuild=1&amp;rebuild-mode=scroll&amp;rebuild-debug=1">scroll + debug bar</a>
+      <a href="pages/dental/index.html?rebuild=0">without the effect</a>
+    </div>
+  </section>
+
+  <section class="page">
+    <h2>Next.js 15 app</h2>
+    <p>App Router, React hydration, a counter button and a fixed Help button. (Static export on GitHub Pages.)</p>
+    <div class="links">
+      <a class="main" href="pages/nextjs/?rebuild=1&amp;rebuild-mode=scroll">scroll</a>
+      <a href="pages/nextjs/?rebuild=1&amp;rebuild-mode=fast">fast</a>
+      <a href="pages/nextjs/?rebuild=1&amp;rebuild-mode=tour&amp;rebuild-debug=1">tour (debug)</a>
+      <a href="pages/nextjs/?rebuild=1&amp;rebuild-mode=scroll&amp;rebuild-debug=1">scroll + debug bar</a>
+      <a href="pages/nextjs/?rebuild=0">without the effect</a>
+    </div>
+  </section>
+</main>
+</body>
+</html>

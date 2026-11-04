@@ -21,7 +21,9 @@ h2 { font-size: 34px; margin: 0 0 24px; }
 .steps li { display: grid; grid-template-columns: 56px 180px 1fr; gap: 16px; align-items: baseline; padding: 16px 0; border-bottom: 1px solid #e4e2da; }
 .steps span { color: #3a5bd9; font-weight: 700; }
 .steps p { margin: 0; color: #555d6b; }
-footer { padding: 40px 0; color: #555d6b; font-size: 14px; }
+footer { padding: 40px 0 96px; color: #555d6b; font-size: 14px; }
+/* fixed floating button (bottom right): the effect must never draw over it */
+.help { position: fixed; right: 20px; bottom: 20px; z-index: 40; padding: 12px 20px; border-radius: 999px; background: #1d2430; color: #fff; font-weight: 700; text-decoration: none; box-shadow: 0 6px 18px rgba(0,0,0,.2); }
 @media (max-width: 759px) {
   h1 { font-size: 34px; }
   nav { display: none; }

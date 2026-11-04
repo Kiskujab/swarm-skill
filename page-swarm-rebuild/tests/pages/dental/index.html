@@ -57,6 +57,9 @@
   footer { padding: 40px 0 120px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); }
   footer .wrap { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
   .call-fab { display: none; }
+  /* desktop: a fixed cookie-style notice in the corner (the effect must never draw over it) */
+  .notice { position: fixed; left: 20px; bottom: 20px; z-index: 40; width: 300px; padding: 14px 16px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.12); font-size: 14px; color: var(--muted); }
+  .notice button { margin-top: 8px; padding: 6px 14px; border: 0; border-radius: 8px; background: var(--teal); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
   @media (max-width: 759px) {
     body { font-size: 16px; }
     nav { display: none; }
@@ -65,6 +68,7 @@
     h2 { font-size: 28px; }
     section { padding: 56px 0; }
     .hero .wrap, .split, .grid3 { grid-template-columns: 1fr; }
+    .notice { display: none; }
     .call-fab { display: flex; position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 50; gap: 10px; }
     .call-fab a { flex: 1; text-align: center; padding: 14px 10px; border-radius: 999px; font-weight: 700; text-decoration: none; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
     .call-fab .call { background: var(--teal); color: #fff; }
@@ -207,6 +211,8 @@
     <span><a href="#top">Back to top</a></span>
   </div>
 </footer>
+
+<div class="notice" role="region" aria-label="Cookie notice">This fictional site uses no cookies at all.<br><button type="button" onclick="this.parentNode.style.display='none'">OK</button></div>
 
 <div class="call-fab">
   <a class="call" href="tel:+15550100200">Call us</a>

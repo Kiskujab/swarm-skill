@@ -16,7 +16,8 @@ export default function RootLayout({ children }) {
       </head>
       <body>
         {children}
-        <SwarmRebuild mode="fast" />
+        <a className="help" href="#contact">Help</a>
+        <SwarmRebuild />
       </body>
     </html>
   );

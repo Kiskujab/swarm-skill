@@ -8,3 +8,5 @@ swarm-check/
 dbg*.cjs
 dbg*.js
 .DS_Store
+_site/
+**/out/

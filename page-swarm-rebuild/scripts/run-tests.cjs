@@ -6,15 +6,20 @@
  *                              [--quick] [--min-fps 50] [--out <dir>] [--timeout 3600]
  *
  * Test pages (all fictional, all paths relative to the skill folder):
- *   demo     assets/demo/index.html              dark portfolio, 212 layers, 6.6 viewport heights
- *   dental   tests/pages/dental/index.html       light small-business page, fixed "Call us" bar on mobile
- *   nextjs   tests/pages/nextjs/                 Next.js 15 App Router app with a React counter (hydration)
+ *   demo     assets/demo/index.html              dark portfolio, 214 layers, 6.6 viewport heights, sticky header
+ *   dental   tests/pages/dental/index.html       light small-business page; fixed "Call us" bar (mobile),
+ *                                                fixed cookie-style notice (desktop)
+ *   nextjs   tests/pages/nextjs/                 Next.js 15 App Router app, React counter (hydration), fixed Help button
+ *
+ * Per page and device: one full run (--mode tour --speed 6, i.e. the old "fast" baseline, with
+ * --checks all,manual: record, extra, product, protect, fixed, manual) plus recorded runs of what visitors get
+ * (scroll; on the demo also fast, and the 1x tour on desktop).
  *
  * The Next.js app is copied to a temporary folder, the module files from assets/ are copied into its
  * components/swarm-rebuild/ (as SKILL.md tells you to install it), its dependencies are installed there
  * with npm, then it is built and started. Nothing is written into the skill folder.
  *
- * --quick   skip the long tour run (about 45 s) on the demo
+ * --quick   skip the long 1x tour run (about 45 s) and the fast run on the demo
  * --out     results folder (default: <os tmp>/page-swarm-rebuild-check); summary.md / summary.json there
  *
  * All servers are started on free ports and stopped at the end (also on Ctrl+C and on the time limit).
@@ -25,7 +30,7 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const net = require('net');
-const { spawn, spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 
 const SKILL = path.resolve(__dirname, '..');
 const args = {};
@@ -77,62 +82,39 @@ function waitHttp(url, ms) {
     })();
   });
 }
-function copyDir(src, dst, skip) {
-  fs.mkdirSync(dst, { recursive: true });
-  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
-    if (skip && skip.includes(e.name)) continue;
-    const a = path.join(src, e.name), b = path.join(dst, e.name);
-    if (e.isDirectory()) copyDir(a, b, skip); else fs.copyFileSync(a, b);
-  }
-}
-function run(cmd, argv, opt) {
-  console.log('$ ' + cmd + ' ' + argv.join(' '));
-  const r = spawnSync(cmd, argv, Object.assign({ stdio: 'inherit' }, opt));
-  if (r.status !== 0) throw new Error(cmd + ' ' + argv.join(' ') + ' failed (' + (r.error ? r.error.message : 'exit ' + r.status) + ')');
-}
+const { prepareNext, buildNext, nextBin } = require('./next-app.cjs');
 
 async function startNext() {
-  const src = path.join(SKILL, 'tests', 'pages', 'nextjs');
-  const work = path.join(os.tmpdir(), 'page-swarm-rebuild-next');
-  copyDir(src, work, ['node_modules', '.next', 'components']);
-  const comp = path.join(work, 'components', 'swarm-rebuild');
-  fs.mkdirSync(comp, { recursive: true });
-  fs.copyFileSync(path.join(SKILL, 'assets', 'swarm-rebuild.js'), path.join(comp, 'swarm-rebuild.js'));
-  fs.copyFileSync(path.join(SKILL, 'assets', 'swarm-rebuild.css'), path.join(comp, 'swarm-rebuild.css'));
-  fs.copyFileSync(path.join(SKILL, 'assets', 'react', 'SwarmRebuild.jsx'), path.join(comp, 'SwarmRebuild.jsx'));
-  const pkg = fs.readFileSync(path.join(work, 'package.json'), 'utf8');
-  const stamp = path.join(work, 'node_modules', '.installed-from');
-  if (!fs.existsSync(stamp) || fs.readFileSync(stamp, 'utf8') !== pkg) {
-    run('npm', ['install', '--no-audit', '--no-fund', '--loglevel=error'], { cwd: work, timeout: 600000 });
-    fs.writeFileSync(stamp, pkg);
-  }
-  const nextBin = path.join(work, 'node_modules', 'next', 'dist', 'bin', 'next');
-  run(process.execPath, [nextBin, 'build'], { cwd: work, timeout: 600000, env: Object.assign({}, process.env, { NEXT_TELEMETRY_DISABLED: '1' }) });
+  const work = prepareNext();
+  buildNext(work);
   const port = await freePort();
-  const c = spawn(process.execPath, [nextBin, 'start', '-p', String(port), '-H', '127.0.0.1'], { cwd: work, detached: true, stdio: 'ignore', env: Object.assign({}, process.env, { NEXT_TELEMETRY_DISABLED: '1' }) });
+  const c = spawn(process.execPath, [nextBin(work), 'start', '-p', String(port), '-H', '127.0.0.1'], { cwd: work, detached: true, stdio: 'ignore', env: Object.assign({}, process.env, { NEXT_TELEMETRY_DISABLED: '1' }) });
   children.add(c);
   const url = 'http://127.0.0.1:' + port + '/';
   await waitHttp(url, 60000);
   return url;
 }
 
-function verify(name, url, device, mode, checks, extra) {
-  const out = path.join(OUT, [name, device, mode].join('-'));
+function verify(name, url, device, label, checks, extra) {
+  const out = path.join(OUT, [name, device, label].join('-'));
   fs.rmSync(path.join(out, 'frames'), { recursive: true, force: true });
-  const argv = [path.join(__dirname, 'verify.cjs'), '--url', url, '--mode', mode, '--device', device, '--checks', checks, '--out', out, '--min-fps', String(MIN_FPS), '--timeout', mode === 'tour' ? '420' : '300'].concat(extra || []);
-  console.log('\n=== ' + name + ' / ' + device + ' / ' + mode + ' (' + checks + ')');
+  const mode = label === 'tour6' ? 'tour' : label;
+  const long = checks.indexOf('all') >= 0 || checks.indexOf('manual') >= 0;
+  const argv = [path.join(__dirname, 'verify.cjs'), '--url', url, '--mode', mode, '--device', device, '--checks', checks, '--out', out, '--min-fps', String(MIN_FPS), '--timeout', long ? '660' : '300']
+    .concat(label === 'tour6' ? ['--speed', '6'] : []).concat(extra || []);
+  console.log('\n=== ' + name + ' / ' + device + ' / ' + label + ' (' + checks + ')');
   fs.rmSync(path.join(out, 'report.json'), { force: true });
   // async: the static server lives in this process and must keep answering
   return new Promise((resolve) => {
     const c = spawn(process.execPath, argv, { stdio: 'inherit', detached: true });
     children.add(c);
-    const kill = setTimeout(() => { try { process.kill(-c.pid, 'SIGKILL'); } catch (e) { /* gone */ } }, 480000);
+    const kill = setTimeout(() => { try { process.kill(-c.pid, 'SIGKILL'); } catch (e) { /* gone */ } }, long ? 720000 : 360000);
     c.on('exit', (code) => {
       clearTimeout(kill);
       children.delete(c);
       let rep = null;
       try { rep = JSON.parse(fs.readFileSync(path.join(out, 'report.json'), 'utf8')); } catch (e) { /* no report */ }
-      resolve({ name, device, mode, checks, exit: code, report: rep, out });
+      resolve({ name, device, mode: label, checks, exit: code, report: rep, out });
     });
   });
 }
@@ -148,15 +130,19 @@ function verify(name, url, device, mode, checks, extra) {
   const plan = [];
   for (const device of DEVICES) {
     if (PAGES.includes('demo')) {
-      plan.push(['demo', device, 'fast', 'all,manual']);
+      plan.push(['demo', device, 'tour6', 'all,manual']);
       if (device === 'desktop' && !args.quick) plan.push(['demo', device, 'tour', 'record']);
       plan.push(['demo', device, 'scroll', 'record']);
+      if (!args.quick) plan.push(['demo', device, 'fast', 'record']);
     }
     if (PAGES.includes('dental')) {
-      plan.push(['dental', device, 'fast', 'all,manual']);
+      plan.push(['dental', device, 'tour6', 'all,manual']);
       plan.push(['dental', device, 'scroll', 'record']);
     }
-    if (PAGES.includes('nextjs')) plan.push(['nextjs', device, 'fast', 'all,manual', ['--interact', '[data-testid=counter]']]);
+    if (PAGES.includes('nextjs')) {
+      plan.push(['nextjs', device, 'tour6', 'all,manual', ['--interact', '[data-testid=counter]']]);
+      plan.push(['nextjs', device, 'scroll', 'record', ['--interact', '[data-testid=counter]']]);
+    }
   }
   const runs = [];
   for (const [n, d, m, c, x] of plan) runs.push(await verify(n, urls[n], d, m, c, x)); // one at a time: fps is measured
@@ -177,7 +163,7 @@ function verify(name, url, device, mode, checks, extra) {
       pixel_pct: rep.pixelDiff != null ? +(rep.pixelDiff * 100).toFixed(3) : null,
       viewport_heights: rep.pageViewportHeights || null,
       scroll_curve: rep.scrollCurve ? rep.scrollCurve.map((p) => p.progress) : null,
-      manual: rep.manual || null
+      manual: rep.manual || null, fixed: rep.fixed || null, protect: rep.protect || null
     };
   });
   fs.writeFileSync(path.join(OUT, 'summary.json'), JSON.stringify(rows, null, 2));
@@ -187,8 +173,10 @@ function verify(name, url, device, mode, checks, extra) {
   md.push('');
   fails.forEach((r) => { md.push('**' + r.page + ' / ' + r.device + ' / ' + r.mode + '** (exit ' + r.exit + ')'); r.failed.forEach((f) => md.push('- ' + f)); });
   rows.filter((r) => r.manual).forEach((r) => {
-    Object.entries(r.manual).forEach(([k, v]) => md.push('- manual ' + k + ' ' + r.page + '/' + r.device + ': max ahead ' + v.maxAhead + ' vh, waits ' + (v.waits ? 'avg ' + v.waits.avg + ' s / max ' + v.waits.max + ' s (n=' + v.waits.n + ')' : 'none') + ', control bar covered ' + v.hudCovered + '/' + v.hudSamples + ' samples, CLS ' + (v.cls != null ? v.cls.toFixed(4) : '?')));
+    Object.entries(r.manual).forEach(([k, v]) => md.push('- manual ' + k + ' ' + r.page + '/' + r.device + ': max ahead ' + v.maxAhead + ' vh, waits ' + (v.waits ? 'avg ' + v.waits.avg + ' s / max ' + v.waits.max + ' s (n=' + v.waits.n + ')' : 'none') + ', CLS ' + (v.cls != null ? v.cls.toFixed(4) : '?')));
   });
+  rows.filter((r) => r.fixed).forEach((r) => md.push('- fixed ' + r.page + '/' + r.device + ': ' + r.fixed.samples + ' pixel samples of ' + (r.fixed.elements.join(', ') || 'no fixed element') + ', covered ' + r.fixed.covered));
+  rows.filter((r) => r.protect && r.protect.above).forEach((r) => md.push('- above the view ' + r.page + '/' + r.device + ': ' + r.protect.above.probes + ' probes, ' + r.protect.above.checked + ' layer checks, not final ' + r.protect.above.bad));
   fs.writeFileSync(path.join(OUT, 'summary.md'), md.join('\n') + '\n');
   console.log('\n' + md.join('\n'));
   console.log('\nresults: ' + OUT);
