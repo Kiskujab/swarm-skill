@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>さくら歯科クリニック</title>
+<!-- Fictional test page for page-swarm-rebuild: Japanese (CJK, no spaces between words) -->
+<script>(function(d,w){w.__swarmRebuildSnippet=1;try{var q=new URLSearchParams(location.search).get('rebuild');if(q==='0')return;if(w.matchMedia&&w.matchMedia('(prefers-reduced-motion: reduce)').matches)return;if(q!=='1'&&sessionStorage.getItem('swarm-rebuild:seen'))return;var s=d.createElement('style');s.id='swarm-rebuild-hide';s.textContent='@layer swarm-rebuild{body *{visibility:var(--sr-v,hidden)!important}#swarm-rebuild-root{opacity:var(--sr-o,1)!important}}';d.head.appendChild(s);try{w.__srDms=d.documentElement.animate([{'--sr-v':'visible','--sr-o':'0'}],{duration:1,delay:5000,fill:'forwards'})}catch(e){}setTimeout(function(){var r=w.SwarmRebuild;if(!(r&&r.active)){var e=d.getElementById('swarm-rebuild-hide');if(e)e.remove()}},5000)}catch(e){}})(document,window);</script>
+<link rel="stylesheet" href="../../../assets/swarm-rebuild.css">
+<style>
+  :root { --ink: #2b2430; --muted: #5d6673; --acc: #c2416b; --soft: #fbe4ec; --line: #e1e4ea; --bg: #fffafc; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 17px/1.65 "Hiragino Sans", "Noto Sans JP", "Yu Gothic", "Unifont-JP", sans-serif; color: var(--ink); background: var(--bg); }
+  a { color: var(--acc); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  header { background: #fff; border-bottom: 1px solid var(--line); }
+  header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 76px; }
+  .logo { font-weight: 800; font-size: 20px; color: var(--ink); text-decoration: none; }
+  nav ul { display: flex; gap: 20px; list-style: none; margin: 0; padding: 0; }
+  nav a { color: var(--muted); text-decoration: none; font-size: 15px; }
+  .btn { display: inline-block; padding: 12px 22px; border-radius: 12px; background: var(--acc); color: #fff; text-decoration: none; font-weight: 700; font-size: 15px; border: 0; font-family: inherit; cursor: pointer; }
+  .btn-ghost { background: transparent; color: var(--acc); border: 2px solid var(--acc); padding: 10px 20px; }
+  section { padding: 84px 0; }
+  section + section { border-top: 1px solid var(--line); }
+  h1 { font-size: 50px; line-height: 1.15; margin: 0 0 18px; }
+  h2 { font-size: 34px; line-height: 1.25; margin: 0 0 14px; }
+  h3 { font-size: 20px; margin: 0 0 8px; }
+  .eyebrow { color: var(--acc); font-weight: 700; font-size: 14px; margin: 0 0 10px; }
+  .lead { font-size: 19px; color: var(--muted); max-width: 620px; }
+  .hero .wrap { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: center; }
+  .pic { width: 100%; height: auto; display: block; border-radius: 20px; }
+  .actions { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 26px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 34px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 26px; }
+  .card .ic { width: 46px; height: 46px; border-radius: 12px; background: var(--soft); color: var(--acc); display: grid; place-items: center; font-weight: 800; font-size: 20px; margin-bottom: 14px; }
+  .card p { color: var(--muted); margin: 0; font-size: 16px; }
+  .price { display: block; margin-top: 12px; font-weight: 700; }
+  .team { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 30px; }
+  .person { margin: 0; }
+  .person figcaption { margin-top: 12px; }
+  .person b { display: block; }
+  .person span { color: var(--muted); font-size: 15px; }
+  .long { font-size: 17px; max-width: 760px; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  td:last-child { text-align: end; color: var(--muted); }
+  details { border-bottom: 1px solid var(--line); padding: 16px 0; }
+  summary { cursor: pointer; font-weight: 700; }
+  details p { color: var(--muted); margin: 10px 0 0; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; }
+  form label { display: block; font-size: 14px; color: var(--muted); margin: 14px 0 6px; }
+  form input, form textarea { width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+  form .btn { margin-top: 18px; }
+  .contact-list { list-style: none; padding: 0; margin: 0; }
+  .contact-list li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  footer { padding: 40px 0 60px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); }
+  footer .wrap { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  
+  @media (max-width: 759px) {
+    nav, header .btn { display: none; }
+    h1 { font-size: 34px; } h2 { font-size: 27px; }
+    section { padding: 54px 0; }
+    .hero .wrap, .grid3, .team, .split { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <a class="logo" href="#top">さくら歯科</a>
+    <nav aria-label="メインメニュー"><ul><li><a href="#shinryo">診療内容</a></li><li><a href="#about">医院紹介</a></li><li><a href="#ryokin">料金</a></li><li><a href="#access">アクセス</a></li></ul></nav>
+    <a class="btn" href="#contact">予約する</a>
+  </div>
+</header>
+<main id="top">
+  <section class="hero">
+    <div class="wrap">
+      <div>
+        <p class="eyebrow">開院二十周年のかかりつけ歯科</p>
+        <h1>痛みの少ない、やさしい歯科治療を</h1>
+        <p class="lead">一般歯科から小児歯科、ホワイトニングまで幅広く対応しています。平日は夜八時まで、土曜日も午後五時まで診療していますので、お仕事帰りにもお気軽にお越しください。</p>
+        <div class="actions"><a class="btn" href="#contact" id="cta">予約する</a><a class="btn btn-ghost" href="tel:+81355550100">電話する</a></div>
+      </div>
+      <svg viewBox="0 0 640 420" width="640" height="420" role="img" aria-label="歯のイラスト" class="pic"><defs><linearGradient id="g12" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f7c6d6"/><stop offset="1" stop-color="#c2416b"/></linearGradient></defs><rect width="640" height="420" rx="24" fill="url(#g12)"/><circle cx="213" cy="210" r="84" fill="rgba(255,255,255,.35)"/><rect x="320" y="350" width="213" height="18" rx="9" fill="rgba(255,255,255,.55)"/></svg>
+    </div>
+  </section>
+  <section id="shinryo">
+    <div class="wrap">
+      <p class="eyebrow">診療内容</p>
+      <h2>診療内容</h2>
+      <p class="lead">患者さま一人ひとりに合わせた治療計画をご提案します。</p>
+      <div class="grid3"><article class="card"><div class="ic">一</div><h3>一般歯科</h3><p>むし歯や歯周病の治療を、できるだけ削らない方法で行います。</p><span class="price">保険適用</span></article><article class="card"><div class="ic">二</div><h3>小児歯科</h3><p>お子さまが怖がらないよう、遊びながら慣れていただきます。</p><span class="price">保険適用</span></article><article class="card"><div class="ic">三</div><h3>ホワイトニング</h3><p>専用の薬剤で歯を傷つけずに白くします。</p><span class="price">二万円から</span></article></div>
+    </div>
+  </section>
+  <section id="about">
+    <div class="wrap">
+      <h2>医院紹介</h2>
+      <div class="long"><p>当院は駅から徒歩三分の場所にあり、ベビーカーや車いすでも通いやすいバリアフリー設計です。待合室には絵本とキッズスペースを用意しております。</p><p>院長は大学病院で十五年間の臨床経験を積み、地域の皆さまの健康を支えることを目標に開業しました。わかりやすい説明と丁寧な治療を心がけています。</p></div>
+      <div class="team"><figure class="person"><svg viewBox="0 0 360 300" width="360" height="300" role="img" aria-label="山田 花子" class="pic"><defs><linearGradient id="g9" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f7c6d6"/><stop offset="1" stop-color="#c2416b"/></linearGradient></defs><rect width="360" height="300" rx="24" fill="url(#g9)"/><circle cx="120" cy="150" r="60" fill="rgba(255,255,255,.35)"/><rect x="180" y="230" width="120" height="18" rx="9" fill="rgba(255,255,255,.55)"/></svg><figcaption><b>山田 花子</b><span>院長</span></figcaption></figure><figure class="person"><svg viewBox="0 0 360 300" width="360" height="300" role="img" aria-label="佐藤 健太" class="pic"><defs><linearGradient id="g10" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f7c6d6"/><stop offset="1" stop-color="#c2416b"/></linearGradient></defs><rect width="360" height="300" rx="24" fill="url(#g10)"/><circle cx="120" cy="150" r="60" fill="rgba(255,255,255,.35)"/><rect x="180" y="230" width="120" height="18" rx="9" fill="rgba(255,255,255,.55)"/></svg><figcaption><b>佐藤 健太</b><span>歯科医師</span></figcaption></figure><figure class="person"><svg viewBox="0 0 360 300" width="360" height="300" role="img" aria-label="鈴木 美咲" class="pic"><defs><linearGradient id="g11" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f7c6d6"/><stop offset="1" stop-color="#c2416b"/></linearGradient></defs><rect width="360" height="300" rx="24" fill="url(#g11)"/><circle cx="120" cy="150" r="60" fill="rgba(255,255,255,.35)"/><rect x="180" y="230" width="120" height="18" rx="9" fill="rgba(255,255,255,.55)"/></svg><figcaption><b>鈴木 美咲</b><span>歯科衛生士</span></figcaption></figure></div>
+    </div>
+  </section>
+  
+  <section id="ryokin">
+    <div class="wrap split">
+      <div><h2>料金の目安</h2><table><tr><td>初診（検査を含む）</td><td>約三千円</td></tr><tr><td>クリーニング</td><td>約二千円</td></tr><tr><td>ホワイトニング</td><td>二万円から</td></tr></table></div>
+      <div><h2>よくある質問</h2><details><summary>予約なしでも受診できますか？</summary><p>急患の方は随時受け付けておりますが、予約の方が優先となります。</p></details><details><summary>駐車場はありますか？</summary><p>提携駐車場が二台分ございます。</p></details></div>
+    </div>
+  </section>
+  <section id="contact">
+    <div class="wrap split">
+      <div>
+        <h2>アクセス</h2>
+        <ul class="contact-list">
+          <li>電話: <a href="tel:+81355550100">03-5555-0100</a></li>
+          <li>メール: <a href="mailto:hello@example.invalid">hello@example.invalid</a></li>
+          <li>住所：東京都さくら区一丁目二番三号（架空の住所）</li>
+        </ul>
+      </div>
+      <form onsubmit="return false">
+        <h3>お問い合わせ</h3>
+        <label for="n">お名前</label><input id="n" name="n">
+        <label for="m">ご用件</label><textarea id="m" name="m" rows="3"></textarea>
+        <button class="btn" type="submit">送信する</button>
+      </form>
+    </div>
+  </section>
+</main>
+<footer><div class="wrap"><span>さくら歯科クリニック（架空のテストページ）</span><a href="#top">ページの先頭へ</a></div></footer>
+<script src="../../../assets/swarm-rebuild.js" data-auto data-mode="scroll" data-focus="#cta"></script>
+</body>
+</html>

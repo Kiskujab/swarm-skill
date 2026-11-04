@@ -11,7 +11,7 @@
  *   index.html                     -> redirects to tests/
  *   tests/index.html               links to every page in every mode
  *   assets/...                     the module and the demo (assets/demo/index.html)
- *   tests/pages/dental/...         the dental page
+ *   tests/pages/<name>/...         the static test pages (dental, languages, ...)
  *   tests/pages/nextjs/...         static export of the Next.js app (npm install + next build in a temp folder)
  * --base   the path the site is served from (GitHub Pages project site: /<repo name>); only Next.js needs it.
  * --no-next  skip the Next.js export (no npm needed)
@@ -31,7 +31,12 @@ const BASE = args.base && args.base !== true ? String(args.base).replace(/\/$/, 
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
 copyDir(path.join(SKILL, 'assets'), path.join(OUT, 'assets'));
-copyDir(path.join(SKILL, 'tests', 'pages', 'dental'), path.join(OUT, 'tests', 'pages', 'dental'));
+// every static test page (the Next.js app is built separately below)
+fs.readdirSync(path.join(SKILL, 'tests', 'pages')).forEach((d) => {
+  const src = path.join(SKILL, 'tests', 'pages', d);
+  if (d === 'nextjs' || !fs.statSync(src).isDirectory() || fs.existsSync(path.join(src, 'package.json'))) return;
+  copyDir(src, path.join(OUT, 'tests', 'pages', d));
+});
 fs.copyFileSync(path.join(SKILL, 'tests', 'index.html'), path.join(OUT, 'tests', 'index.html'));
 fs.writeFileSync(path.join(OUT, 'index.html'), '<!doctype html><meta charset="utf-8"><title>page-swarm-rebuild</title><meta http-equiv="refresh" content="0; url=tests/"><a href="tests/">Test pages</a>\n');
 fs.writeFileSync(path.join(OUT, '.nojekyll'), '');

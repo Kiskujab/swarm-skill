@@ -24,6 +24,7 @@ and this file disagree, this file wins (product decisions were made after the de
 | `assets/demo/` | Fictional dark portfolio demo (`assets/demo/index.html`, 214 layers (desktop), 6.6 viewport heights, sticky header). |
 | `tests/index.html` | Links to every test page in every mode (also the GitHub Pages start page). |
 | `tests/pages/dental/` | Fictional dental practice: light theme, phone links, fixed "Call us" + booking bar (mobile), fixed notice (desktop). |
+| `tests/pages/lang-*/` | Fictional pages in Hungarian, Arabic (right to left), Japanese and an emoji-rich one (typing in any language). |
 | `tests/pages/nextjs/` | Fictional Next.js 15 App Router app: React counter (hydration check), fixed Help button. |
 | `scripts/verify.cjs` | Playwright check of one page (see step 4). |
 | `scripts/run-tests.cjs` | Runs `verify.cjs` on the three test pages, desktop and mobile; prints a summary table. |
@@ -102,6 +103,21 @@ A/B tests (debug add-on).
   long ones set the pace) so the whole build takes as long as before; only the split between small and big changes.
 - **Lite** (`motion.lite: 'auto'`): on phones 2 swarms and no mouse play; when the frame rate stays
   under 38 fps for two seconds during the build, also one trail ghost instead of three.
+
+## Languages and writing directions
+
+The module assumes no language. Typing goes by user-perceived characters (grapheme clusters, `Intl.Segmenter`, with
+a fallback that joins combining marks, ZWJ sequences, skin tones, variation selectors and flag pairs): an accented
+letter, an emoji family, a flag or a letter with Arabic / Hebrew marks is never split. Untyped text stays in place as
+hidden text, and browsers shape across that boundary, so Arabic letters keep their joined forms and nothing reflows.
+Right-to-left elements (`direction: rtl`, e.g. `<html dir="rtl">`): frames grow from the right edge, lines are drawn
+from right to left, the agent types on the left side and the caret sits left of the last typed letter; a
+left-to-right run inside right-to-left text (a number, an e-mail address, a Latin name) is typed as a whole, like a
+pasted word. CJK text (no spaces) and long words wrap exactly as on the page. The overlay itself is always laid out
+left to right (`direction: ltr` on its root) so a right-to-left page never mirrors it. Numbers in any script
+(`\p{Nd}`) count as numbers. Test pages: `tests/pages/lang-hu` (ő / ű, very long words), `lang-ar` (right to left,
+Arabic-Indic digits, a Hebrew quote), `lang-ja` (Japanese), `lang-emoji`. Known limit: vertical writing modes
+(`writing-mode: vertical-rl`) are typed but the frames still grow left to right.
 
 ## Protection (the page is never left half hidden)
 
@@ -254,7 +270,8 @@ perfect circle, the finale's spring pull with overshoot and slow circling, mouse
 36 px, shorter follows when the pointer leaves faster, moves do not end the effect; gravity sag of horizontal moves and
 none of vertical ones; difficulty: bigger parts take longer, at most ~4x; contact sheets `sheet-opening.jpg` /
 `sheet-finale.jpg`), `manual` (debug tour interrupted by wheel scrolling, then a scroll-mode run),
-`all` = record,extra,product,protect,fixed,visible,motion. `--interact "<selector>"` also clicks an element after the effect and
+`text` (typing in any language: every frame, the typed part of every text ends on a character boundary, and the
+caret sits after the last typed character on its writing side), `all` = record,extra,product,protect,fixed,visible,text,motion. `--interact "<selector>"` also clicks an element after the effect and
 expects its text to change (e.g. a React counter). Every run has a hard time limit (`--timeout`, default 400 s).
 
 All checks must pass: run to the end, monotonic counters, auto-scroll ends at the bottom (tour), fps >= `--min-fps`

@@ -4,7 +4,7 @@
  *
  *   node verify.cjs --url http://localhost:5500/ [--mode scroll|fast|tour] [--speed 6] [--out ./swarm-check]
  *                   [--device desktop|mobile] [--viewport 1440x900] [--fps 10]
- *                   [--checks all|record|extra|product|protect|fixed|visible|motion|manual (comma list)]
+ *                   [--checks all|record|extra|product|protect|fixed|visible|text|motion|manual (comma list)]
  *                   [--interact "<selector>"] [--min-fps 50] [--timeout 400] [--video ref.mp4 --crop 930:500:90:690]
  *
  * --mode / --speed   the recorded run. scroll and fast are what visitors get (no control bar, the page follows
@@ -25,12 +25,15 @@
  *   visible  scroll mode builds only what is in view: every part starts with at least the start share (60 %) of
  *            it in view, no working agent is ever outside the view, no task runs out of view, and after fast
  *            scrolls (wheel bursts, Page Down, End) the view is filled within ~1-2 s; contact sheet sheet-visible.jpg
+ *   text     typing in any language: every frame of a visitor run, the typed part of every text ends on a character
+ *            boundary (grapheme cluster: accents, emoji ZWJ sequences, flags, Arabic marks, CJK), and the caret sits
+ *            after the last typed character in its writing direction (left of it in Arabic / Hebrew)
  *   motion   the motion (debug add-on measurements): opening swarms around the focus element with changing speed,
  *            the finale's spring-like pull (overshoot) and slow circling, mouse play (dodge, follow shorter when the
  *            pointer leaves faster, never closer than 36 px, desktop only), gravity sag of horizontal moves (none for
  *            vertical ones), task difficulty (bigger = longer, at most ~4x); contact sheets of the opening and finale
  *   manual   the visitor takes over: a debug tour interrupted by wheel scrolling, then a scroll-mode run
- *   all      record,extra,product,protect,fixed,visible,motion
+ *   all      record,extra,product,protect,fixed,visible,text,motion
  *
  * Frame rate is measured in a separate run without screenshots. It depends on the machine: a cloud
  * container without a GPU reaches ~46-55 fps with the demo where a normal laptop reaches ~59, so lower
@@ -70,7 +73,7 @@ const MOBILE = args.device === 'mobile';
 const [VW, VH] = String(args.viewport || (MOBILE ? '390x844' : '1440x900')).split('x').map(Number);
 const FPS = Number(args.fps || 10);
 const CHECKS = new Set(String(args.checks || 'all').split(','));
-if (CHECKS.has('all')) ['record', 'extra', 'product', 'protect', 'fixed', 'visible', 'motion'].forEach((c) => CHECKS.add(c));
+if (CHECKS.has('all')) ['record', 'extra', 'product', 'protect', 'fixed', 'visible', 'text', 'motion'].forEach((c) => CHECKS.add(c));
 const TIMEOUT_S = Number(args.timeout || 400);
 const MIN_FPS = Number(args['min-fps'] || 50);
 fs.mkdirSync(path.join(OUT, 'frames'), { recursive: true });
@@ -789,6 +792,80 @@ function fixedTargets() {
         fs.rmSync(dir, { recursive: true, force: true });
       } catch (e) { console.log('(visible contact sheet skipped: ' + (e.message || e).toString().split('\n')[0] + ')'); }
     }
+  }
+
+  if (CHECKS.has('text')) {
+    // ---------- typing in any language: never splits a character, caret on the right side
+    const { ctx, page, bag } = await openEffect('scroll', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => {
+      const seg = window.Intl && Intl.Segmenter ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+      const RTL = /[֐-ࣿיִ-﷿ﹰ-﻿]/, LTR = /[A-Za-zÀ-ɏͰ-ԯ぀-ヿ㐀-鿿가-힯]/;
+      const v = window.__txt = { frames: 0, cuts: 0, splits: 0, ex: [], carets: 0, caretBad: 0, cex: [], rtlCarets: 0, scripts: {} };
+      const rng = document.createRange();
+      (function f() {
+        const root = document.getElementById('swarm-rebuild-root');
+        const R = window.SwarmRebuild;
+        if (root && R && R.state().phase === 'build') {
+          v.frames++;
+          const rests = root.querySelectorAll('sr-r');
+          let lastTyped = null;
+          rests.forEach((r) => {
+            const n = r.previousSibling;
+            if (!n || n.nodeType !== 3 || !r.textContent || !n.data) return;
+            v.cuts++;
+            const full = n.data + r.textContent, k = n.data.length;
+            if (/[؀-ۿ]/.test(full)) v.scripts.arabic = 1; if (/[֐-׿]/.test(full)) v.scripts.hebrew = 1;
+            if (/[぀-ヿ一-鿿]/.test(full)) v.scripts.cjk = 1; if (/[\u{1F300}-\u{1FAFF}]/u.test(full)) v.scripts.emoji = 1; if (/[őűŐŰ]/.test(full)) v.scripts.hungarian = 1;
+            let ok = true;
+            if (seg) { ok = false; for (const s of seg.segment(full)) { if (s.index === k) { ok = true; break; } if (s.index > k) break; } }
+            else { const c = n.data.charCodeAt(k - 1); ok = !(c >= 0xD800 && c <= 0xDBFF); }
+            if (!ok) { v.splits++; if (v.ex.length < 4) v.ex.push(JSON.stringify(full.slice(Math.max(0, k - 3), k) + '|' + full.slice(k, k + 3))); }
+            lastTyped = n;
+          });
+          // caret: next to the last typed character of the text being typed, on its writing side
+          root.querySelectorAll('.sr-caret').forEach((c) => {
+            const m = /translate3d\(([-\d.]+)px,\s*([-\d.]+)px/.exec(c.style.transform || '');
+            if (!m) return;
+            const cx = parseFloat(m[1]) - scrollX, cy = parseFloat(m[2]) - scrollY;
+            // the typed text whose end is nearest to the caret (several texts can be typed on one line at once)
+            let best = null;
+            rests.forEach((r) => {
+              const n = r.previousSibling;
+              if (n && n.nodeType === 3 && !n.data && r.parentNode) {
+                // nothing typed yet: the caret waits at the start edge of the text
+                const pr = r.parentNode.getBoundingClientRect(), rtl0 = getComputedStyle(r.parentNode).direction === 'rtl';
+                if (Math.abs(pr.top - cy) <= 4) { const want = rtl0 ? pr.right - 3 : pr.left + 1, d = Math.abs(cx - want); if (!best || d < best.d) best = { d, ch: '(start)', rtl: rtl0, want }; }
+                return;
+              }
+              if (!n || n.nodeType !== 3 || !n.data) return;
+              const e = n.data.length, s0 = seg ? (() => { let st = 0; for (const s of seg.segment(n.data)) st = s.index; return st; })() : e - 1;
+              rng.setStart(n, s0); rng.setEnd(n, e); const rc = rng.getBoundingClientRect();
+              if (Math.abs(rc.top - cy) > 4) return;
+              const ch = n.data.slice(s0), rtl = RTL.test(ch) ? true : LTR.test(ch) ? false : getComputedStyle(n.parentNode).direction === 'rtl';
+              const want = rtl ? rc.left - 3 : rc.right + 1, d = Math.abs(cx - want);
+              if (!best || d < best.d) best = { d, ch, rtl, want };
+            });
+            if (!best) return;
+            v.carets++;
+            if (best.rtl) v.rtlCarets++;
+            if (best.d > 4) { v.caretBad++; if (v.cex.length < 3) v.cex.push(best.ch + ' caret ' + Math.round(cx) + ' want ' + Math.round(best.want)); }
+          });
+        }
+        if (!R || R.state().phase !== 'idle') requestAnimationFrame(f);
+      })();
+    });
+    await readDown(page, 0.35, 500, 90000);
+    const v = await page.evaluate(() => window.__txt);
+    report.text = v;
+    check('text: typing never splits a character (grapheme clusters: accents, emoji, flags, Arabic, CJK)', v.cuts > 0 && v.splits === 0,
+      v.frames + ' frames, ' + v.cuts + ' typed / untyped cuts checked, scripts seen: ' + (Object.keys(v.scripts).join(', ') || 'latin') + (v.splits ? ', split: ' + v.ex.join(' ') : ''));
+    check('text: the caret sits after the last typed character, on its writing side', v.carets > 0 && v.caretBad === 0,
+      v.carets + ' caret samples (' + v.rtlCarets + ' right-to-left), off ' + v.caretBad + (v.cex.length ? ': ' + v.cex.join('; ') : ''));
+    await page.evaluate(() => window.SwarmRebuild.goLive()).catch(() => {});
+    await page.waitForTimeout(300);
+    const g = await page.evaluate(gone);
+    check('text: run ends with the original DOM, no layout shift, no errors', isFinished(g, baseDom) && g.cls < 0.01 && !bag.length && !bag.fallbacks.length, 'CLS ' + (g.cls || 0).toFixed(4) + ' ' + (bag.concat(bag.fallbacks)).slice(0, 3).join(' | '));
+    await ctx.close();
   }
 
   if (CHECKS.has('manual')) {

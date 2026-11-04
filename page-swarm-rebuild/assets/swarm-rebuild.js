@@ -146,12 +146,53 @@
     return 'body>' + parts.join('>');
   }
   function shortAngle(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
+  // Text is typed by user-perceived characters (grapheme clusters): an accented letter, an emoji with skin tone or a
+  // family emoji (ZWJ sequence), a flag, a Hangul syllable or a letter with Arabic / Hebrew marks is never split.
+  var SEG = null, EXT = null, RI = null, RTL_CH = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/, LTR_CH = /[A-Za-z\u00C0-\u024F\u0370-\u052F\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]/;
+  try { if (window.Intl && Intl.Segmenter) SEG = new Intl.Segmenter(undefined, { granularity: 'grapheme' }); } catch (e) { SEG = null; }
+  try { EXT = new RegExp('^[\\p{M}\\u200D\\uFE00-\\uFE0F\\u{1F3FB}-\\u{1F3FF}\\u{E0020}-\\u{E007F}]$', 'u'); RI = new RegExp('^[\\u{1F1E6}-\\u{1F1FF}]$', 'u'); } catch (e) { EXT = /^[\u0300-\u036f\u200D\uFE00-\uFE0F]$/; RI = null; }
+  // end offsets (UTF-16) of the grapheme clusters of s
+  function graphemeEnds(s) {
+    var out = [], i;
+    if (SEG) {
+      var segs = Array.from(SEG.segment(s));
+      for (i = 0; i < segs.length; i++) out.push(segs[i].index + segs[i].segment.length);
+      return out;
+    }
+    // fallback (no Intl.Segmenter): code points, joined with marks, ZWJ sequences, variation selectors, skin tones,
+    // tags and regional-indicator pairs (flags)
+    var cps = Array.from ? Array.from(s) : s.split(''), pos = 0, zwj = false, ri = 0;
+    for (i = 0; i < cps.length; i++) {
+      var c = cps[i], isRi = !!(RI && RI.test(c)), join = out.length && (EXT.test(c) || zwj || (isRi && ri % 2 === 1));
+      pos += c.length;
+      if (join) out[out.length - 1] = pos; else out.push(pos);
+      zwj = c === '\u200D';
+      ri = isRi ? ri + 1 : 0;
+    }
+    return out;
+  }
+  // right-to-left text: a left-to-right run inside it (a number, an e-mail address, a Latin name) is typed as a whole,
+  // like a pasted word (typing it letter by letter would move the visible run back and forth)
+  function ltrRuns(s, ends) {
+    var out = [], p = 0;
+    for (var i = 0; i < ends.length; i++) {
+      var e = ends[i], a = s.charAt(e - 1), b = s.charAt(e);
+      var inRun = e < s.length && /\S/.test(a) && /\S/.test(b) && !RTL_CH.test(a) && !RTL_CH.test(b);
+      if (!inRun) out.push(e);
+      p = e;
+    }
+    if (!out.length || out[out.length - 1] !== s.length) out.push(s.length);
+    return out;
+  }
+  function firstGrapheme(s) { var e = graphemeEnds(s); return e.length ? s.slice(0, e[0]) : ''; }
 
   var ICON_ARROW = '<svg class="sr-i-arrow" width="22" height="22" viewBox="0 0 24 24"><path d="M3.3 2.6 21 10.1c.7.3.6 1.3-.1 1.5l-7.4 1.9-1.9 7.4c-.2.7-1.2.8-1.5.1L2.6 3.3c-.2-.5.2-.9.7-.7Z" fill="currentColor" stroke="rgba(255,255,255,.85)" stroke-width="1.1" stroke-linejoin="round"/></svg>';
   var ICON_CROSS = '<svg class="sr-i-cross" width="18" height="18" viewBox="0 0 18 18"><path d="M9 1v16M1 9h16" stroke="rgba(6,10,18,.75)" stroke-width="4" stroke-linecap="round"/><path d="M9 1.5v15M1.5 9h15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   var ICON_IBEAM = '<svg class="sr-i-ibeam" width="10" height="20" viewBox="0 0 10 20"><path d="M2 1.5c1.6 0 3 .6 3 2v13c0 1.4-1.4 2-3 2M8 1.5c-1.6 0-3 .6-3 2v13c0 1.4 1.4 2 3 2M3 10h4" fill="none" stroke="rgba(6,10,18,.8)" stroke-width="3" stroke-linecap="round"/><path d="M2 1.5c1.6 0 3 .6 3 2v13c0 1.4-1.4 2-3 2M8 1.5c-1.6 0-3 .6-3 2v13c0 1.4 1.4 2 3 2M3 10h4" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/></svg>';
   var ICON_IMG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg>';
 
+  var NUM = /^[0-9][0-9\s.,:+%×x\/–-]*$/;
+  try { NUM = new RegExp('^\\p{Nd}[\\p{Nd}\\s.,:+%×x/–٫٬-]*$', 'u'); } catch (e) { /* older engine: ASCII digits only */ }
   var MEDIA = { img: 1, video: 1, canvas: 1, svg: 1, picture: 1, iframe: 1, object: 1, embed: 1 };
   var CONTROL = { input: 1, textarea: 1, select: 1 };
   var SKIP_TAG = { script: 1, style: 1, noscript: 1, template: 1, link: 1, meta: 1, br: 1, wbr: 1, source: 1, track: 1, slot: 1 };
@@ -241,8 +282,11 @@
     var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), list = [], n;
     while ((n = w.nextNode())) if (/\S/.test(n.data)) list.push(n);
     for (var i = 0; i < list.length; i++) {
-      this.nodes.push({ n: list[i], full: list[i].data, rest: null, shown: list[i].data.length });
-      this.total += list[i].data.length;
+      var ends = graphemeEnds(list[i].data), dir = false;
+      try { dir = getComputedStyle(list[i].parentNode).direction === 'rtl'; } catch (e) { /* ignore */ }
+      if (dir) ends = ltrRuns(list[i].data, ends);
+      this.nodes.push({ n: list[i], full: list[i].data, ends: ends, rest: null, shown: ends.length, dir: dir });
+      this.total += ends.length;
     }
     this.caret = null;
     if (empty) this.set(0);
@@ -250,34 +294,45 @@
   Typer.prototype.set = function (k) {
     var rem = Math.max(0, Math.floor(k)), last = null;
     for (var i = 0; i < this.nodes.length; i++) {
-      var o = this.nodes[i], take = Math.min(rem, o.full.length);
+      var o = this.nodes[i], take = Math.min(rem, o.ends.length);
       if (o.shown !== take) {
         if (!o.rest) { // created on first use only (copies that are never typed keep their structure)
           o.rest = document.createElement('sr-r');
           o.rest.setAttribute('style', 'all:unset;visibility:hidden');
           o.n.parentNode.insertBefore(o.rest, o.n.nextSibling);
         }
-        o.n.data = o.full.slice(0, take); o.rest.textContent = o.full.slice(take); o.shown = take;
+        // (the browser shapes across the two parts: Arabic letters keep their joined forms, nothing moves)
+        var cut = take ? o.ends[take - 1] : 0;
+        o.n.data = o.full.slice(0, cut); o.rest.textContent = o.full.slice(cut); o.shown = take;
       }
       rem -= take;
       if (take > 0 || !last) last = o;
     }
     // caret: absolutely positioned at the end of the typed text, moved with transforms (no layout shift)
-    if (!this.caret && last && this.world) {
+    if (!this.caret && last && this.world && !this.noCaret) {
       this.caret = document.createElement('i'); this.caret.className = 'sr-caret';
       this.caret.style.color = getComputedStyle(last.n.parentNode).color;
       this.world.appendChild(this.caret);
       own(this.caret);
     }
     if (this.caret && last && last.n.parentNode) {
-      var r = this.range || (this.range = document.createRange()), len = last.n.data.length, rc;
-      if (len) { r.setStart(last.n, len - 1); r.setEnd(last.n, len); rc = r.getBoundingClientRect(); }
-      else { rc = last.n.parentNode.getBoundingClientRect(); rc = { right: rc.left, top: rc.top, height: Math.min(rc.height, 40) }; }
+      var r = this.range || (this.range = document.createRange()), len = last.n.data.length, rc, rtl;
+      if (last.dir == null) { try { last.dir = getComputedStyle(last.n.parentNode).direction === 'rtl'; } catch (e) { last.dir = false; } }
+      if (len) {
+        var g = last.shown, a0 = g > 1 ? last.ends[g - 2] : 0, ch = last.full.slice(a0, len);
+        r.setStart(last.n, a0); r.setEnd(last.n, len); rc = r.getBoundingClientRect();
+        // the caret sits after the last typed character in its writing direction (left of it in Arabic / Hebrew)
+        rtl = RTL_CH.test(ch) ? true : LTR_CH.test(ch) ? false : last.dir;
+      } else {
+        rc = last.n.parentNode.getBoundingClientRect(); rtl = last.dir;
+        rc = { left: rc.right, right: rc.left, top: rc.top, height: Math.min(rc.height, 40) };
+      }
       this.caret.style.height = Math.max(8, rc.height) + 'px';
-      this.caret.style.transform = 'translate3d(' + (rc.right + window.scrollX + 1) + 'px,' + (rc.top + window.scrollY) + 'px,0)';
+      this.caret.style.transform = 'translate3d(' + ((rtl ? rc.left - 3 : rc.right + 1) + window.scrollX) + 'px,' + (rc.top + window.scrollY) + 'px,0)';
     }
   };
   Typer.prototype.end = function () { this.set(this.total); rm(this.caret); this.caret = null; };
+  Typer.prototype.done = function () { rm(this.caret); this.caret = null; this.noCaret = true; }; // typing finished: no caret
 
   // -------------------------------------------------------------- overlay UI
   function Sel(st, red) {
@@ -535,7 +590,7 @@
     for (k = 100; k < vh; k += 100) { var b = mk('span', '', st.rulerLeft); b.textContent = k; b.style.top = (k + 3) + 'px'; }
     st.agentLayer = mk('div', 'sr-agents', deco);
     st.mono = mk('div', 'sr-mono', deco);
-    st.mono.textContent = st.o.monogram || ((document.title || 'S').trim().charAt(0) || 'S').toUpperCase();
+    st.mono.textContent = st.o.monogram || (firstGrapheme((document.title || 'S').trim()) || 'S').toUpperCase();
     st.guides = [];
     for (k = 0; k < 16; k++) st.guides.push(mk('i', 'sr-guide', st.guideLayer));
     st.root = root;
@@ -775,6 +830,7 @@
     }
     function addLayer(el, kind, R, tree, extra) {
       var L = assign({ id: layers.length, el: el, kind: kind, x: R.x, y: R.y, w: R.w, h: R.h, tree: tree, count: 1, state: 'pending' }, extra);
+      try { L.rtl = getComputedStyle(el).direction === 'rtl'; } catch (e) { L.rtl = false; } // right-to-left: frames grow from the right
       L.section = sectionOf(el, R.y);
       layers.push(L);
       for (var k = 0; k < stack.length; k++) stack[k].layers.push(L);
@@ -852,7 +908,7 @@
       if (dt && nDesc <= 40 && !bigMedia(el)) {
         var fs = parseFloat(cs.fontSize) || 16, sub = 'text';
         if (fs >= Math.max(34, rootFont * 2.1) && txt.length <= 80) sub = 'heading';
-        else if (/^[0-9][0-9\s.,:+%×x\/–-]*$/.test(txt) && txt.length <= 8) sub = 'number';
+        else if (NUM.test(txt) && txt.length <= 8) sub = 'number';
         addLayer(el, 'text', R, true, { sub: sub, chars: txt.length });
         return;
       }
@@ -1583,14 +1639,16 @@
         if (this.outline && tk.ph) tk.ph.el.classList.add('sr-ph-line');
       },
       tick: function (tk2, p) {
-        var e = easeOut(p), w = Math.max(2, L.w * s * e), h = Math.max(2, L.h * s * e);
+        var e = easeOut(p), w = Math.max(2, L.w * s * e), h = Math.max(2, L.h * s * e), x = ax(L, w);
         var bigFrame = L.w * L.h > window.innerWidth * window.innerHeight * 0.08;
-        tk.sel.set(L.x, L.y, w, h, bigFrame && p < 1);
-        if (tk.ph) tk.ph.set(L.x, L.y, w, h);
-        tk.agent.x = L.x + w; tk.agent.y = L.y + h;
+        tk.sel.set(x, L.y, w, h, bigFrame && p < 1);
+        if (tk.ph) tk.ph.set(x, L.y, w, h);
+        tk.agent.x = L.rtl ? x : x + w; tk.agent.y = L.y + h;
       }
     };
   }
+  // left edge of a frame w wide that grows from the start edge of its layer (the right edge in right-to-left text)
+  function ax(L, w) { return L.rtl ? L.x + L.w - w : L.x; }
   function settleText(st, tk, L) {
     return {
       d: 0,
@@ -1613,6 +1671,7 @@
       d: 0,
       start: function () {
         tk.proxy = makeProxy(st, L.el, L, true);
+        if (L.rtl) tk.proxy.el.style.transformOrigin = '100% 0';
         if (scale !== 1) tk.proxy.el.style.transform = 'scale(' + scale + ')';
         if (fromPh && tk.ph) { tk.ph.remove(); tk.ph = null; }
         chars = tk.proxy.typer.total;
@@ -1624,7 +1683,7 @@
       tick: function (tk2, p) {
         tk.proxy.typer.set(chars * p);
         var a = tk.agent;
-        a.x = L.x + L.w * scale + 6; a.y = L.y + Math.min(L.h * scale, 60) / 2;
+        a.x = L.rtl ? ax(L, L.w * scale) - 14 : L.x + L.w * scale + 6; a.y = L.y + Math.min(L.h * scale, 60) / 2;
       }
     };
   }
@@ -1633,7 +1692,7 @@
     var k = L.kind;
     if (L.blocked) {
       // frame already drawn during blocking: select it, then fill
-      ph.push(travel(st, tk, L.x, L.y));
+      ph.push(travel(st, tk, ax(L, 0), L.y));
       ph.push({
         d: 0.1 / tk.mw,
         start: function () {
@@ -1644,26 +1703,26 @@
         }
       });
     } else if (k === 'line') {
-      ph.push(travel(st, tk, L.x, L.y + L.h / 2));
+      ph.push(travel(st, tk, ax(L, 0), L.y + L.h / 2));
     } else {
-      ph.push(travel(st, tk, L.x, L.y));
+      ph.push(travel(st, tk, ax(L, 0), L.y));
     }
 
     if (k === 'text') {
       var heading = L.sub === 'heading';
       var s = heading ? 0.42 : 1;
-      if (L.blocked && heading) ph.push({ d: 0.12 / tk.mw, tick: function (tk2, p) { var sc = lerp(1, s, easeInOut(p)); tk.sel.set(L.x, L.y, L.w * sc, L.h * sc); } });
+      if (L.blocked && heading) ph.push({ d: 0.12 / tk.mw, tick: function (tk2, p) { var sc = lerp(1, s, easeInOut(p)); tk.sel.set(ax(L, L.w * sc), L.y, L.w * sc, L.h * sc); } });
       else if (!L.blocked) ph.push(drag(st, tk, L, false, s));
       ph.push(typePhase(st, tk, L, s, false));
       if (heading) {
         ph.push({
           d: 0.28 / tk.mw,
-          start: function () { tk.agent.setMode('cross'); tk.guide = L; },
+          start: function () { tk.agent.setMode('cross'); tk.guide = L; tk.proxy.typer.done(); },
           tick: function (tk2, p) {
             var e = easeInOut(p), sc = lerp(s, 1, e);
             tk.proxy.el.style.transform = 'scale(' + sc + ')';
-            tk.sel.set(L.x, L.y, L.w * sc, L.h * sc, p < 1);
-            tk.agent.x = L.x + L.w * sc; tk.agent.y = L.y + L.h * sc;
+            tk.sel.set(ax(L, L.w * sc), L.y, L.w * sc, L.h * sc, p < 1);
+            tk.agent.x = L.rtl ? ax(L, L.w * sc) : L.x + L.w * sc; tk.agent.y = L.y + L.h * sc;
           }
         });
       }
@@ -1712,7 +1771,11 @@
         tick: function (tk2, p) {
           var e = easeInOut(p);
           if (L.vertical) { tk.line.style.height = (L.h * e) + 'px'; tk.agent.x = L.x; tk.agent.y = L.y + L.h * e; }
-          else { tk.line.style.width = (L.w * e) + 'px'; tk.agent.x = L.x + L.w * e; tk.agent.y = L.y; }
+          else {
+            tk.line.style.width = (L.w * e) + 'px';
+            if (L.rtl) tk.line.style.transform = 'translate3d(' + ax(L, L.w * e) + 'px,' + L.y + 'px,0)';
+            tk.agent.x = L.rtl ? ax(L, L.w * e) : L.x + L.w * e; tk.agent.y = L.y;
+          }
           tk.dot.style.transform = 'translate3d(' + tk.agent.x + 'px,' + tk.agent.y + 'px,0)';
         },
         end: function () {
@@ -1744,6 +1807,7 @@
   }
   function clonePhases(st, tk, g, idle) {
     var M = g.master.R, members = g.members.filter(function (m) { return !m.done; });
+    if (g.rtl == null) { try { g.rtl = getComputedStyle(g.master.el).direction === 'rtl'; } catch (e) { g.rtl = false; } }
     if (!st.touring) {
       // visitor modes: only the copies that are in view now; the others wait until they are
       var sy = window.scrollY, vh = window.innerHeight;
@@ -1856,7 +1920,7 @@
             var f = 'blur(' + ((1 - q) * 6).toFixed(1) + 'px) brightness(' + (0.45 + 0.55 * q).toFixed(2) + ')';
             for (var k = 0; k < mpx.imgs.length; k++) mpx.imgs[k].style.filter = q < 1 ? f : '';
             copies[i].el.style.opacity = String(clamp(1 - q * 2.5, 0, 1));
-            tk.agent.x = m.R.x + m.R.w + 4; tk.agent.y = m.R.y + Math.min(m.R.h, 40) / 2;
+            tk.agent.x = g.rtl ? m.R.x - 14 : m.R.x + m.R.w + 4; tk.agent.y = m.R.y + Math.min(m.R.h, 40) / 2;
             if (q >= 1) {
               mpx.kill(); rm(copies[i].el);
               if (sels[i]) sels[i].out();

@@ -70,8 +70,8 @@ Order A, B, C, D, E, F, G, H; commit + push after every block. Full suite only o
 |---|---|---|
 | A visible-only build (scroll mode) | done | `buildVisible` 0.6; verify group `visible` |
 | B idle agents never cluster | done | rest spots >= 72 px apart, fade after 1.4 s; verify check `idle` (in group `visible`) |
-| C language support | next | |
-| D legacy backup | open | |
+| C language support | done | graphemes, RTL, 4 language pages, verify group `text`; Arabic CLS 0.0016 (overlay only, see decisions) |
+| D legacy backup | next | |
 | E one-command removal | open | |
 | F many realistic test pages | open | |
 | G perf / SEO / a11y / minified build | open | |
@@ -104,6 +104,18 @@ Order A, B, C, D, E, F, G, H; commit + push after every block. Full suite only o
 - (B) Cluster threshold: "overlapping" = another cursor within 18 px on both axes (the icon is ~20 px); the check
   allows 3 or more overlapping in at most 2 % of the frames (transients when a row of copies releases its helpers) and
   ignores the first 0.6 s of the build (the opening swarms dissolving). Measured 0.0-0.4 %, median 0 everywhere.
+- (C) Typing by grapheme clusters (`Intl.Segmenter`; fallback rules for old engines, regexes built with `new RegExp`
+  so an engine without `\p{}` support cannot fail to parse the module).
+- (C) The overlay root is always `direction: ltr` (an RTL page inherited RTL into the overlay: rulers, labels and
+  agent layers moved -> CLS 0.32 on the Arabic page). Proxies keep their own direction (copied computed styles).
+- (C) Arabic page CLS: 0.32 -> 0.0025 (LTR overlay) -> 0.0016 (left-to-right runs such as numbers and e-mail addresses
+  inside RTL text are typed as a whole). The rest are sub-pixel moves of overlay text where numbers sit inside Arabic
+  lines while typing (Chromium reports them for the typed text node); the page itself never moves. Tried three more
+  things without effect (replacing the text node at every step, putting the hidden rest before the typed part, an
+  LTR-isolated proxy root): kept the simplest version. 0.0016 is far below the verify limit 0.01 (Google's "good" is
+  0.1); all LTR pages, Japanese and emoji stay at 0.0000.
+- (C) RTL check of the caret: in the text check every frame (caret within 4 px of the end of the last typed character
+  in its writing direction, or of the start edge before the first one).
 - (A) 1.2.0 measured with the same probe (demo desktop, reading down): 58 of 120 starts under 60 % in view (many at
   0 %), working agents off screen in 42 % of the samples. 1.3: 0 starts under 60 %, 0 off screen.
 

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rainbow Food Truck 🌈🚚</title>
+<!-- Fictional test page for page-swarm-rebuild: emoji-rich (ZWJ sequences, flags, skin tones, combining marks) -->
+<script>(function(d,w){w.__swarmRebuildSnippet=1;try{var q=new URLSearchParams(location.search).get('rebuild');if(q==='0')return;if(w.matchMedia&&w.matchMedia('(prefers-reduced-motion: reduce)').matches)return;if(q!=='1'&&sessionStorage.getItem('swarm-rebuild:seen'))return;var s=d.createElement('style');s.id='swarm-rebuild-hide';s.textContent='@layer swarm-rebuild{body *{visibility:var(--sr-v,hidden)!important}#swarm-rebuild-root{opacity:var(--sr-o,1)!important}}';d.head.appendChild(s);try{w.__srDms=d.documentElement.animate([{'--sr-v':'visible','--sr-o':'0'}],{duration:1,delay:5000,fill:'forwards'})}catch(e){}setTimeout(function(){var r=w.SwarmRebuild;if(!(r&&r.active)){var e=d.getElementById('swarm-rebuild-hide');if(e)e.remove()}},5000)}catch(e){}})(document,window);</script>
+<link rel="stylesheet" href="../../../assets/swarm-rebuild.css">
+<style>
+  :root { --ink: #1e1b2e; --muted: #5d6673; --acc: #6d28d9; --soft: #ede9fe; --line: #e1e4ea; --bg: #fdfcff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 17px/1.65 system-ui, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--bg); }
+  a { color: var(--acc); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  header { background: #fff; border-bottom: 1px solid var(--line); }
+  header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 76px; }
+  .logo { font-weight: 800; font-size: 20px; color: var(--ink); text-decoration: none; }
+  nav ul { display: flex; gap: 20px; list-style: none; margin: 0; padding: 0; }
+  nav a { color: var(--muted); text-decoration: none; font-size: 15px; }
+  .btn { display: inline-block; padding: 12px 22px; border-radius: 12px; background: var(--acc); color: #fff; text-decoration: none; font-weight: 700; font-size: 15px; border: 0; font-family: inherit; cursor: pointer; }
+  .btn-ghost { background: transparent; color: var(--acc); border: 2px solid var(--acc); padding: 10px 20px; }
+  section { padding: 84px 0; }
+  section + section { border-top: 1px solid var(--line); }
+  h1 { font-size: 50px; line-height: 1.15; margin: 0 0 18px; }
+  h2 { font-size: 34px; line-height: 1.25; margin: 0 0 14px; }
+  h3 { font-size: 20px; margin: 0 0 8px; }
+  .eyebrow { color: var(--acc); font-weight: 700; font-size: 14px; margin: 0 0 10px; }
+  .lead { font-size: 19px; color: var(--muted); max-width: 620px; }
+  .hero .wrap { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: center; }
+  .pic { width: 100%; height: auto; display: block; border-radius: 20px; }
+  .actions { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 26px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 34px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 26px; }
+  .card .ic { width: 46px; height: 46px; border-radius: 12px; background: var(--soft); color: var(--acc); display: grid; place-items: center; font-weight: 800; font-size: 20px; margin-bottom: 14px; }
+  .card p { color: var(--muted); margin: 0; font-size: 16px; }
+  .price { display: block; margin-top: 12px; font-weight: 700; }
+  .team { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 30px; }
+  .person { margin: 0; }
+  .person figcaption { margin-top: 12px; }
+  .person b { display: block; }
+  .person span { color: var(--muted); font-size: 15px; }
+  .long { font-size: 17px; max-width: 760px; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  td:last-child { text-align: end; color: var(--muted); }
+  details { border-bottom: 1px solid var(--line); padding: 16px 0; }
+  summary { cursor: pointer; font-weight: 700; }
+  details p { color: var(--muted); margin: 10px 0 0; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; }
+  form label { display: block; font-size: 14px; color: var(--muted); margin: 14px 0 6px; }
+  form input, form textarea { width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+  form .btn { margin-top: 18px; }
+  .contact-list { list-style: none; padding: 0; margin: 0; }
+  .contact-list li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  footer { padding: 40px 0 60px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); }
+  footer .wrap { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  
+  @media (max-width: 759px) {
+    nav, header .btn { display: none; }
+    h1 { font-size: 34px; } h2 { font-size: 27px; }
+    section { padding: 54px 0; }
+    .hero .wrap, .grid3, .team, .split { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <a class="logo" href="#top">🌈 Rainbow Truck</a>
+    <nav aria-label="Main"><ul><li><a href="#menu">Menu 🍔</a></li><li><a href="#crew">Crew 👩‍🍳</a></li><li><a href="#prices">Prices 💶</a></li><li><a href="#contact">Contact 📞</a></li></ul></nav>
+    <a class="btn" href="#contact">Order now 🛎️</a>
+  </div>
+</header>
+<main id="top">
+  <section class="hero">
+    <div class="wrap">
+      <div>
+        <p class="eyebrow">Street food 🇭🇺 🇯🇵 🇲🇽 🇮🇹 since 2019</p>
+        <h1>Tacos 🌮, ramen 🍜 and lángos 🥯 – all on one truck</h1>
+        <p class="lead">Family run 👨‍👩‍👧‍👦, plant-friendly 🌱, and always on time ⏱️. Café crème with crème brûlée (café crème) on Sundays ☀️.</p>
+        <div class="actions"><a class="btn" href="#contact" id="cta">Order now 🛎️</a><a class="btn btn-ghost" href="tel:+3615550199">Call us 📞</a></div>
+      </div>
+      <svg viewBox="0 0 640 420" width="640" height="420" role="img" aria-label="Food truck illustration" class="pic"><defs><linearGradient id="g16" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c4b5fd"/><stop offset="1" stop-color="#6d28d9"/></linearGradient></defs><rect width="640" height="420" rx="24" fill="url(#g16)"/><circle cx="213" cy="210" r="84" fill="rgba(255,255,255,.35)"/><rect x="320" y="350" width="213" height="18" rx="9" fill="rgba(255,255,255,.55)"/></svg>
+    </div>
+  </section>
+  <section id="menu">
+    <div class="wrap">
+      <p class="eyebrow">Menu 🍔</p>
+      <h2>Menu 🍽️</h2>
+      <p class="lead">Pick a dish, we wave 👋🏽 when it is ready.</p>
+      <div class="grid3"><article class="card"><div class="ic">🌮</div><h3>Taco trio</h3><p>Three corn tacos 🌽 with salsa verde and lime 🍋.</p><span class="price">€9 ✨</span></article><article class="card"><div class="ic">🍜</div><h3>Shoyu ramen</h3><p>Slow broth 🍲, soft egg 🥚 and spring onion.</p><span class="price">€11 🔥</span></article><article class="card"><div class="ic">🥯</div><h3>Lángos</h3><p>Fried dough with sour cream and cheese 🧀, the Budapest way.</p><span class="price">€6 💛</span></article></div>
+    </div>
+  </section>
+  <section id="crew">
+    <div class="wrap">
+      <h2>Our crew 👩🏾‍🍳👨🏻‍🍳</h2>
+      <div class="long"><p>We are three cooks 🧑🏽‍🍳, one driver 🧑🏼‍✈️ and a dog 🐕‍🦺. Find us at markets 🏪, festivals 🎪 and the office park 🏢 on Fridays. Allergies? Ask us 🙋🏿‍♀️ – we label everything ✅.</p><p>Flags we cook under: 🇭🇺 🇯🇵 🇲🇽 🇮🇹 🇰🇷 🏳️‍🌈 🏴‍☠️.</p></div>
+      <div class="team"><figure class="person"><svg viewBox="0 0 360 300" width="360" height="300" role="img" aria-label="Zoë 👩🏻‍🦰" class="pic"><defs><linearGradient id="g13" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c4b5fd"/><stop offset="1" stop-color="#6d28d9"/></linearGradient></defs><rect width="360" height="300" rx="24" fill="url(#g13)"/><circle cx="120" cy="150" r="60" fill="rgba(255,255,255,.35)"/><rect x="180" y="230" width="120" height="18" rx="9" fill="rgba(255,255,255,.55)"/></svg><figcaption><b>Zoë 👩🏻‍🦰</b><span>head cook</span></figcaption></figure><figure class="person"><svg viewBox="0 0 360 300" width="360" height="300" role="img" aria-label="Mateo 👨🏽‍🦱" class="pic"><defs><linearGradient id="g14" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c4b5fd"/><stop offset="1" stop-color="#6d28d9"/></linearGradient></defs><rect width="360" height="300" rx="24" fill="url(#g14)"/><circle cx="120" cy="150" r="60" fill="rgba(255,255,255,.35)"/><rect x="180" y="230" width="120" height="18" rx="9" fill="rgba(255,255,255,.55)"/></svg><figcaption><b>Mateo 👨🏽‍🦱</b><span>grill master</span></figcaption></figure><figure class="person"><svg viewBox="0 0 360 300" width="360" height="300" role="img" aria-label="Aiko 👩🏻" class="pic"><defs><linearGradient id="g15" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c4b5fd"/><stop offset="1" stop-color="#6d28d9"/></linearGradient></defs><rect width="360" height="300" rx="24" fill="url(#g15)"/><circle cx="120" cy="150" r="60" fill="rgba(255,255,255,.35)"/><rect x="180" y="230" width="120" height="18" rx="9" fill="rgba(255,255,255,.55)"/></svg><figcaption><b>Aiko 👩🏻</b><span>ramen chef</span></figcaption></figure></div>
+    </div>
+  </section>
+  
+  <section id="prices">
+    <div class="wrap split">
+      <div><h2>Prices 💶</h2><table><tr><td>Taco trio 🌮🌮🌮</td><td>€9</td></tr><tr><td>Ramen 🍜</td><td>€11</td></tr><tr><td>Lemonade 🍋🧊</td><td>€3</td></tr></table></div>
+      <div><h2>FAQ ❓</h2><details><summary>Do you cater events? 🎉</summary><p>Yes 👍🏼 – from 30 guests.</p></details><details><summary>Vegan options? 🌱</summary><p>Every dish has one 💚.</p></details></div>
+    </div>
+  </section>
+  <section id="contact">
+    <div class="wrap split">
+      <div>
+        <h2>Contact 📬</h2>
+        <ul class="contact-list">
+          <li>Phone ☎️: <a href="tel:+3615550199">+36 1 555 0199</a></li>
+          <li>Email ✉️: <a href="mailto:hello@example.invalid">hello@example.invalid</a></li>
+          <li>Where: wherever the map 🗺️ says today (fictional)</li>
+        </ul>
+      </div>
+      <form onsubmit="return false">
+        <h3>Say hi 👋</h3>
+        <label for="n">Name</label><input id="n" name="n">
+        <label for="m">Message 💬</label><textarea id="m" name="m" rows="3"></textarea>
+        <button class="btn" type="submit">Send 🚀</button>
+      </form>
+    </div>
+  </section>
+</main>
+<footer><div class="wrap"><span>Rainbow Food Truck 🌈 – fictional test page</span><a href="#top">Back to top ⬆️</a></div></footer>
+<script src="../../../assets/swarm-rebuild.js" data-auto data-mode="scroll" data-focus="#cta"></script>
+</body>
+</html>
