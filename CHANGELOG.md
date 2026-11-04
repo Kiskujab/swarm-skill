@@ -29,7 +29,7 @@ Module (`assets/`)
 - **Scroll keys scroll:** Space, arrows, Page Up / Down, Home / End (focus on the page, no Ctrl / Alt / Meta) drive the
   build like the wheel; Tab, Enter, Esc and all other keys still end the effect (keyboard users reach the content at
   once). In the debug tour, a scroll key hands over to the visitor like the wheel.
-- **Lite:** phones get 2 swarms, no mouse play and a simpler wobble; when the frame rate stays below 38 fps for two
+- **Lite:** phones get 2 swarms and no mouse play; when the frame rate stays below 38 fps for two
   seconds, also one trail ghost instead of three (`motion.lite`).
 - New option `motion` (`swarms`, `mouse`, `arc`, `difficulty`, `spring`, `lite`); debug parameters
   `?rebuild-motion=key:value,...` and `?rebuild-focus=`; debug hook `SwarmRebuild._motion()`; `state()` reports

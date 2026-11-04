@@ -798,28 +798,37 @@ function fixedTargets() {
       const mo = await page.evaluate(() => window.SwarmRebuild._motion());
       const mv = mo.moves.filter((r) => r.done && r.v0 < 5);
       const hz = (r) => Math.abs(r.dx) / Math.hypot(r.dx, r.dy);
-      const H = mv.filter((r) => Math.abs(r.dx) > 150 && hz(r) > 0.85), V = mv.filter((r) => Math.abs(r.dy) > 150 && hz(r) < 0.3);
+      const minH = Math.min(150, VW * 0.3); // a phone screen is narrow
+      const H = mv.filter((r) => Math.abs(r.dx) > minH && hz(r) > 0.85), V = mv.filter((r) => Math.abs(r.dy) > 150 && hz(r) < 0.3);
       const Hh = H.filter((r) => r.w >= 0.5), Hl = H.filter((r) => r.w < 0.3);
       const maxDev = Math.max(0, ...mv.map((r) => r.devY));
       report.motion.gravity = { moves: mv.length, horizontal: H.length, vertical: V.length, sagHorizontal: r3(med(H.map((r) => r.devY / Math.abs(r.dx)))), sagHeavy: r3(med(Hh.map((r) => r.devY / Math.abs(r.dx)))), sagLight: r3(med(Hl.map((r) => r.devY / Math.abs(r.dx)))), sagVertical: r3(med(V.map((r) => r.devMax / Math.hypot(r.dx, r.dy)))), maxSagPx: maxDev, examples: H.slice(0, 4).map((r) => ({ dx: Math.round(r.dx), dy: Math.round(r.dy), weight: r.w, sagPx: r.devY })) };
       const G = report.motion.gravity;
       check('motion: gravity — horizontal moves bend downwards, vertical ones do not, capped at 56 px',
-        H.length >= 3 && G.sagHorizontal > 0.02 && (V.length === 0 || G.sagVertical < 0.01) && maxDev <= 58,
-        H.length + ' horizontal moves: sag ' + Math.round(G.sagHorizontal * 1000) / 10 + ' % of the distance (heavy ' + (G.sagHeavy == null ? '—' : Math.round(G.sagHeavy * 1000) / 10 + ' %') + ', light ' + (G.sagLight == null ? '—' : Math.round(G.sagLight * 1000) / 10 + ' %') + '); ' + V.length + ' vertical: ' + (G.sagVertical == null ? '—' : Math.round(G.sagVertical * 1000) / 10 + ' %') + '; largest ' + maxDev + ' px');
+        (H.length < 3 || G.sagHorizontal > 0.02) && (V.length === 0 || G.sagVertical < 0.01) && maxDev <= 58,
+        (H.length < 3 ? '(only ' + H.length + ' horizontal moves on this page, nothing to measure) ' : '') + H.length + ' horizontal moves: sag ' + Math.round(G.sagHorizontal * 1000) / 10 + ' % of the distance (heavy ' + (G.sagHeavy == null ? '—' : Math.round(G.sagHeavy * 1000) / 10 + ' %') + ', light ' + (G.sagLight == null ? '—' : Math.round(G.sagLight * 1000) / 10 + ' %') + '); ' + V.length + ' vertical: ' + (G.sagVertical == null ? '—' : Math.round(G.sagVertical * 1000) / 10 + ' %') + '; largest ' + maxDev + ' px');
       if (Hh.length >= 2 && Hl.length >= 2) check('motion: gravity — heavier elements bend more', G.sagHeavy > G.sagLight, 'heavy ' + G.sagHeavy + ' vs light ' + G.sagLight);
 
       // difficulty: bigger parts take longer (at most ~4x), 2x area ~1.6-1.8x near the average
+      // (compared within one kind of task: a big box is quick by nature, a small text slower, which would hide the effect)
       const tk = mo.tasks.filter((x) => !x.warp && x.type === 'build');
       const rank = (a) => { const o = a.map((x, i) => [x, i]).sort((p, q) => p[0] - q[0]); const r = []; o.forEach((p, k) => { r[p[1]] = k; }); return r; };
-      const ra = rank(tk.map((x) => x.area)), rw = rank(tk.map((x) => x.work)), nn = tk.length;
-      const rho = nn > 3 ? 1 - 6 * ra.reduce((acc, x, i) => acc + (x - rw[i]) * (x - rw[i]), 0) / (nn * (nn * nn - 1)) : null;
-      const byArea = tk.slice().sort((p, q) => p.area - q.area), qn = Math.max(1, Math.floor(nn / 4));
-      const qRatio = nn >= 8 ? med(byArea.slice(-qn).map((x) => x.work)) / med(byArea.slice(0, qn).map((x) => x.work)) : null;
+      const spear = (xs, ys) => { const ra = rank(xs), rw = rank(ys), nn = xs.length; return 1 - 6 * ra.reduce((acc, x, i) => acc + (x - rw[i]) * (x - rw[i]), 0) / (nn * (nn * nn - 1)); };
+      const kinds = {};
+      tk.forEach((x) => { (kinds[x.kind] = kinds[x.kind] || []).push(x); });
+      const per = [];
+      Object.entries(kinds).forEach(([k, list]) => {
+        if (list.length < 6) return;
+        const by = list.slice().sort((p, q) => p.area - q.area), q3 = Math.max(2, Math.floor(list.length / 3));
+        per.push({ kind: k, n: list.length, rho: +spear(list.map((x) => x.area), list.map((x) => x.work)).toFixed(3), big: +(med(by.slice(-q3).map((x) => x.work)) / med(by.slice(0, q3).map((x) => x.work))).toFixed(3), area: +(med(by.slice(-q3).map((x) => x.area)) / med(by.slice(0, q3).map((x) => x.area))).toFixed(1) });
+      });
+      const wsum = per.reduce((a, p) => a + p.n, 0);
+      const rho = wsum ? per.reduce((a, p) => a + p.rho * p.n, 0) / wsum : null, qRatio = wsum ? per.reduce((a, p) => a + p.big * p.n, 0) / wsum : null;
       const dfs = mo.tasks.map((x) => x.df);
-      report.motion.difficulty = { tasks: nn, spearman: r3(rho), bigToSmallWork: r3(qRatio), dfMin: Math.min(...dfs), dfMax: Math.max(...dfs), range: s.diff };
+      report.motion.difficulty = { tasks: tk.length, spearman: r3(rho), bigToSmallWork: r3(qRatio), perKind: per, dfMin: Math.min(...dfs), dfMax: Math.max(...dfs), range: s.diff };
       check('motion: difficulty — bigger parts take longer, smaller ones less, at most ~4x apart',
-        nn >= 8 && rho > 0.4 && qRatio > 1.25 && Math.max(...dfs) / Math.min(...dfs) <= 4.05,
-        nn + ' tasks: rank correlation area ~ work ' + r3(rho) + ', biggest quarter takes ' + r3(qRatio) + 'x the smallest, difficulty ' + Math.min(...dfs) + '..' + Math.max(...dfs));
+        per.length > 0 && rho > 0.5 && qRatio > 1.3 && Math.max(...dfs) / Math.min(...dfs) <= 4.05,
+        tk.length + ' tasks, same kind compared (' + per.map((p) => p.kind + ' ' + p.n + ': biggest third ' + p.area + 'x the area, ' + p.big + 'x the time').join('; ') + '): rank correlation ' + r3(rho) + ', difficulty ' + Math.min(...dfs) + '..' + Math.max(...dfs));
 
       if (!MOBILE) {
         // mouse: approach a swarm, rest, then move away slowly or fast. Dodge, follow for a while, never touch;

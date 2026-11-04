@@ -1433,7 +1433,7 @@
   }
   function logTask(st, tk, t) {
     var it = tk.it;
-    st.mlog.tasks.push({ type: it.type, kind: it.L ? it.L.kind : 'clone', area: Math.round(carried(it)), df: +tk.df.toFixed(3), work: +((t - tk.w0) * tk.mv).toFixed(3), warp: !!tk.warp });
+    st.mlog.tasks.push({ type: it.type, kind: it.L ? it.L.kind + (tk.blk ? ' (frame drawn before)' : '') : 'clone', area: Math.round(carried(it)), df: +tk.df.toFixed(3), work: +((t - tk.w0) * tk.mv).toFixed(3), warp: !!tk.warp });
     if (st.mlog.tasks.length > 1500) st.mlog.tasks.shift();
   }
   function startTask(st, it, a, t, idle, boost) {
@@ -1446,7 +1446,7 @@
     var sp = st.speedBase * st.mult * (boost || 1);
     var tk = { it: it, agent: a, pi: 0, pStarted: false, pt0: 0, sp: sp, mv: Math.pow(sp, 0.7), guide: null, helpers: [], bag: [], wall0: t };
     // the work itself (not the way there) takes longer the harder the task is
-    tk.df = it.df || 1; tk.mw = tk.mv / tk.df; tk.sw = sp / tk.df;
+    tk.df = it.df || 1; tk.mw = tk.mv / tk.df; tk.sw = sp / tk.df; tk.blk = !!(it.L && it.L.blocked);
     try {
       if (it.type === 'block') tk.phases = blockPhases(st, tk, it.L);
       else if (it.type === 'clone') { tk.phases = clonePhases(st, tk, it.g, idle); }
@@ -1872,7 +1872,7 @@
       st.swarms.push({
         // sizes: clearly different (about k : k-1 : ... : 1, with some chance)
         w: k === 1 ? 1 : Math.pow(k - i, 1.2) + rand(-0.2, 0.3), n: 0, th: (i / k) * Math.PI * 2 + rand(-0.5, 0.5),
-        sp: rand(0.7, 1.3), rf: rand(0.78, 1.22), fx: rand(0.85, 1.15), fy: rand(0.85, 1.15), n1: rand(0, 6.28), n2: rand(0, 6.28), n3: rand(0, 6.28),
+        sp: rand(0.7, 1.3), rf: k === 1 ? 1 : 0.78 + 0.44 * i / (k - 1) + rand(-0.05, 0.05), fx: rand(0.85, 1.15), fy: rand(0.85, 1.15), n1: rand(0, 6.28), n2: rand(0, 6.28), n3: rand(0, 6.28),
         x: 0, y: 0, vx: 0, vy: 0, ax: null, ay: 0, next: 0
       });
     }
@@ -1900,7 +1900,7 @@
     for (var i = 0; i < st.swarms.length; i++) {
       var s = st.swarms[i];
       s.th += dt * w * s.sp * (1 + 0.35 * Math.sin(t * 0.7 + s.n3));
-      var br = s.rf * (1 + 0.12 * Math.sin(t * 0.9 + s.n1) + (st.lite ? 0 : 0.07 * Math.sin(t * 2.3 + s.n2)));
+      var br = s.rf * (1 + 0.12 * Math.sin(t * 0.9 + s.n1) + 0.07 * Math.sin(t * 2.3 + s.n2));
       s.x = O.x + Math.cos(s.th) * O.rx * br * s.fx;
       s.y = O.y + Math.sin(s.th) * O.ry * br * s.fy;
     }

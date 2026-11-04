@@ -94,7 +94,7 @@ A/B tests (debug add-on).
   the box typed into): near the page average 2x the area ~ 1.6-1.8x the time, squashed (tanh) so the hardest task takes
   at most ~4x the easiest. It is normalised (weighted by task length and difficulty, because parallel tasks make the
   long ones set the pace) so the whole build takes as long as before; only the split between small and big changes.
-- **Lite** (`motion.lite: 'auto'`): on phones 2 swarms, no mouse play, a simpler wobble; when the frame rate stays
+- **Lite** (`motion.lite: 'auto'`): on phones 2 swarms and no mouse play; when the frame rate stays
   under 38 fps for two seconds during the build, also one trail ghost instead of three.
 
 ## Protection (the page is never left half hidden)
