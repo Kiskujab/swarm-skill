@@ -1,17 +1,10 @@
-/* swarm-rebuild v1.0.0 — overlay styles. Everything is scoped under #swarm-rebuild-root. */
+/* swarm-rebuild v1.1.0 — overlay styles. Everything is scoped under #swarm-rebuild-root.
+   The debug control bar brings its own styles (swarm-rebuild-debug.js). */
 #swarm-rebuild-root {
   --sr-blue: #2f8fff;
   --sr-cyan: #28d6ee;
   --sr-red: #ff4a4a;
   --sr-ph: rgba(90, 127, 168, 0.45);
-  --sr-hud-bg: rgba(17, 23, 35, 0.62);
-  --sr-hud-solid: #141b28;
-  --sr-hud-fg: #e6edf7;
-  --sr-btn: rgba(255, 255, 255, 0.08);
-  --sr-btn-fg: #c9d3e1;
-  --sr-tour-bg: #1b5485;
-  --sr-tour-fg: #9fd2ff;
-  --sr-live: #1f8fe8;
   position: fixed;
   inset: 0;
   z-index: 2147483000;
@@ -19,7 +12,7 @@
   overflow: hidden;
   contain: strict;
   font: 500 12px/1.2 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  color: var(--sr-hud-fg);
+  color: #e6edf7;
   -webkit-font-smoothing: antialiased;
 }
 #swarm-rebuild-root .sr-deco { position: absolute; inset: 0; }
@@ -29,11 +22,10 @@
 #swarm-rebuild-root .sr-ph {
   position: absolute; left: 0; top: 0; box-sizing: border-box;
   background: var(--sr-ph); border-radius: 2px;
-  display: flex; align-items: center; justify-content: center;
   color: rgba(225, 236, 250, 0.55);
 }
 #swarm-rebuild-root .sr-ph.sr-ph-line { background: none; }
-#swarm-rebuild-root .sr-ph svg { width: 22px; height: 22px; flex: none; }
+#swarm-rebuild-root .sr-ph svg { position: absolute; left: 0; top: 0; width: 22px; height: 22px; } /* centred by the script with a transform */
 #swarm-rebuild-root .sr-ph.sr-fill {
   background: linear-gradient(var(--sr-ph), var(--sr-ph)), var(--sr-bg, #0b0d12);
 }
@@ -163,138 +155,6 @@
 #swarm-rebuild-root .sr-m-ibeam .sr-i-ibeam { display: block; }
 #swarm-rebuild-root .sr-ghost { opacity: 0; will-change: transform, opacity; }
 #swarm-rebuild-root .sr-ghost svg { filter: none !important; }
-
-/* Control bar (the only interactive part).
-   right / left: compact vertical bar at the edge, a little below the middle; collapses to a thin tab.
-   bottom: small horizontal bar; collapses to a thin tab at the bottom edge.
-   mobile: a thin tab at the screen edge, near a free corner; tap to open the bar there. */
-#swarm-rebuild-root .sr-hud {
-  position: absolute; top: 0; left: 0;            /* placed by the script with a transform (no layout shift) */
-  display: flex; flex-direction: column; align-items: stretch; gap: 8px;
-  width: 66px; padding: 4px 7px 7px; box-sizing: border-box;
-  background: var(--sr-hud-bg);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
-  pointer-events: auto;
-  font: 600 10px/1.25 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
-
-/* collapse handle */
-#swarm-rebuild-root .sr-tab {
-  appearance: none; -webkit-appearance: none; margin: 0; padding: 0; border: 0; cursor: pointer;
-  background: none; color: #9eabbd; height: 16px; border-radius: 6px;
-  display: flex; align-items: center; justify-content: center; flex: none;
-}
-#swarm-rebuild-root .sr-tab:hover { color: #fff; background: rgba(255, 255, 255, 0.08); }
-#swarm-rebuild-root .sr-tab:focus-visible { outline: 2px solid var(--sr-cyan); outline-offset: 1px; }
-#swarm-rebuild-root .sr-chev {
-  width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
-  transform: rotate(-45deg); margin-left: -2px;               /* points right: hide to the right */
-}
-#swarm-rebuild-root .sr-hud[data-pos="left"] .sr-chev { transform: rotate(135deg); margin: 0 -2px 0 0; }
-#swarm-rebuild-root .sr-tbar { display: none; position: relative; overflow: hidden; border-radius: 2px; background: rgba(255, 255, 255, 0.16); }
-#swarm-rebuild-root .sr-tbar b { position: absolute; inset: 0; background: var(--sr-blue); transform-origin: 50% 100%; transform: scaleY(var(--sr-p, 0)); }
-
-/* counters */
-#swarm-rebuild-root .sr-stat { display: flex; flex-direction: column; gap: 6px; min-height: 96px; }
-#swarm-rebuild-root .sr-scan { color: #c4cfde; font-weight: 500; }
-#swarm-rebuild-root .sr-avatars { display: inline-flex; }
-#swarm-rebuild-root .sr-avatars i {
-  width: 10px; height: 10px; border-radius: 50%; margin-left: -3px;
-  box-shadow: 0 0 0 1.5px rgba(19, 26, 39, 0.95);
-}
-#swarm-rebuild-root .sr-avatars i:first-child { margin-left: 0; }
-#swarm-rebuild-root .sr-n-agents, #swarm-rebuild-root .sr-n-layers { display: flex; flex-direction: column; }
-#swarm-rebuild-root .sr-stat b { font: 700 15px/1.1 ui-sans-serif, system-ui, sans-serif; color: #fff; font-variant-numeric: tabular-nums; }
-#swarm-rebuild-root .sr-stat small { font: 500 9.5px/1.3 ui-sans-serif, system-ui, sans-serif; color: #9eabbd; font-variant-numeric: tabular-nums; white-space: nowrap; }
-#swarm-rebuild-root .sr-donetext { color: #c4cfde; font-weight: 500; line-height: 1.35; }
-#swarm-rebuild-root .sr-donetext b { font-size: 13px; }
-
-/* progress */
-#swarm-rebuild-root .sr-bar { position: relative; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); overflow: hidden; flex: none; }
-#swarm-rebuild-root .sr-bar i { position: absolute; inset: 0; background: var(--sr-blue); transform-origin: 0 50%; transform: scaleX(var(--sr-p, 0)); }
-
-/* buttons */
-#swarm-rebuild-root .sr-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-#swarm-rebuild-root .sr-btn {
-  appearance: none; -webkit-appearance: none; margin: 0; border: 0; cursor: pointer;
-  height: 24px; padding: 0; border-radius: 7px; min-width: 0;
-  background: var(--sr-btn); color: var(--sr-btn-fg);
-  font: 600 10px/24px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  display: flex; align-items: center; justify-content: center; white-space: nowrap;
-}
-#swarm-rebuild-root .sr-btn:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
-#swarm-rebuild-root .sr-btn:focus-visible { outline: 2px solid var(--sr-cyan); outline-offset: 1px; }
-#swarm-rebuild-root .sr-tour, #swarm-rebuild-root .sr-live, #swarm-rebuild-root .sr-replay { grid-column: 1 / -1; }
-#swarm-rebuild-root .sr-tour.sr-on { background: var(--sr-tour-bg); color: var(--sr-tour-fg); }
-#swarm-rebuild-root .sr-live { background: var(--sr-live); color: #fff; }
-#swarm-rebuild-root .sr-live:hover { background: #3aa0f0; }
-
-/* states */
-#swarm-rebuild-root .sr-hud .sr-avatars, #swarm-rebuild-root .sr-hud .sr-n-agents,
-#swarm-rebuild-root .sr-hud .sr-n-layers, #swarm-rebuild-root .sr-hud .sr-donetext,
-#swarm-rebuild-root .sr-hud .sr-live, #swarm-rebuild-root .sr-hud .sr-replay { display: none; }
-#swarm-rebuild-root .sr-hud[data-state="build"] .sr-scan,
-#swarm-rebuild-root .sr-hud[data-state="done"] .sr-scan { display: none; }
-#swarm-rebuild-root .sr-hud[data-state="build"] .sr-avatars { display: inline-flex; }
-#swarm-rebuild-root .sr-hud[data-state="build"] .sr-n-agents,
-#swarm-rebuild-root .sr-hud[data-state="build"] .sr-n-layers { display: flex; }
-#swarm-rebuild-root .sr-hud[data-state="done"] .sr-donetext { display: block; }
-#swarm-rebuild-root .sr-hud[data-state="done"] .sr-live,
-#swarm-rebuild-root .sr-hud[data-state="done"] .sr-replay { display: flex; }
-#swarm-rebuild-root .sr-hud[data-state="done"] .sr-tour,
-#swarm-rebuild-root .sr-hud[data-state="done"] .sr-speed { display: none; }
-#swarm-rebuild-root .sr-hud[data-state="done"] .sr-close { grid-column: 1 / -1; }
-
-/* collapsed: a thin tab flush with the edge (nothing else is drawn over the page) */
-#swarm-rebuild-root .sr-hud.sr-collapsed { width: 14px; padding: 6px 0; gap: 0; border-radius: 8px 0 0 8px; border-right: 0; }
-#swarm-rebuild-root .sr-hud[data-pos="left"].sr-collapsed { border-radius: 0 8px 8px 0; border-right: 1px solid rgba(255, 255, 255, 0.1); border-left: 0; }
-#swarm-rebuild-root .sr-hud.sr-collapsed > :not(.sr-tab) { display: none !important; }
-#swarm-rebuild-root .sr-collapsed .sr-tab { flex-direction: column; gap: 6px; height: auto; padding: 2px 0; }
-#swarm-rebuild-root .sr-collapsed .sr-chev { transform: rotate(135deg); margin: 0 0 0 2px; }
-#swarm-rebuild-root .sr-hud[data-pos="left"].sr-collapsed .sr-chev { transform: rotate(-45deg); margin: 0 2px 0 0; }
-#swarm-rebuild-root .sr-collapsed .sr-tbar { display: block; width: 3px; height: 34px; }
-
-/* bottom: small horizontal bar */
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]) {
-  top: auto; right: auto; left: 50%; bottom: 12px; transform: translateX(-50%);
-  flex-direction: row; align-items: center; width: auto; height: 34px; padding: 0 5px 0 4px; gap: 8px; white-space: nowrap;
-}
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]) .sr-tab { width: 16px; height: 22px; }
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]) .sr-chev { transform: rotate(45deg); margin: -3px 0 0; }
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]) .sr-stat { flex-direction: row; align-items: center; gap: 8px; min-height: 0; }
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]) .sr-n-agents,
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]) .sr-n-layers { flex-direction: row; align-items: baseline; gap: 3px; }
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]) .sr-stat b { font-size: 11px; }
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]) .sr-stat small { font-size: 10px; }
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]) .sr-n-layers { min-width: 7.6em; }
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]) .sr-donetext b { font-size: 11px; }
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]) .sr-bar { width: 56px; }
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]) .sr-btns { display: flex; gap: 4px; }
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]) .sr-btn { padding: 0 8px; }
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]) .sr-speed,
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]) .sr-close { width: 24px; padding: 0; }
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]).sr-collapsed {
-  bottom: 0; width: 64px; height: 14px; padding: 0 6px; border-radius: 8px 8px 0 0; border: 1px solid rgba(255, 255, 255, 0.1); border-bottom: 0;
-}
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]).sr-collapsed .sr-tab { flex-direction: row; width: 100%; height: 14px; padding: 0; }
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]).sr-collapsed .sr-chev { transform: rotate(-135deg); margin: 3px 0 0; }
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]).sr-collapsed .sr-tbar { width: 34px; height: 3px; }
-#swarm-rebuild-root .sr-hud[data-pos="bottom"]:not([data-mobile]).sr-collapsed .sr-tbar b { transform-origin: 0 50%; transform: scaleX(var(--sr-p, 0)); }
-
-/* mobile: small, near a free corner (chosen by the script so it never covers phone links, booking or other buttons) */
-#swarm-rebuild-root .sr-hud[data-mobile] { width: 60px; padding: 3px 6px 6px; gap: 6px; }
-#swarm-rebuild-root .sr-hud[data-mobile] .sr-stat { min-height: 0; }
-#swarm-rebuild-root .sr-hud[data-mobile] .sr-avatars { display: none !important; }
-#swarm-rebuild-root .sr-hud[data-mobile] .sr-chev { transform: rotate(45deg); margin: -3px 0 0; } /* points down: shrink */
-#swarm-rebuild-root .sr-hud[data-mobile].sr-collapsed { width: 20px; padding: 8px 0; }
-#swarm-rebuild-root .sr-hud[data-mobile][data-corner$="r"].sr-collapsed { border-radius: 8px 0 0 8px; border: 1px solid rgba(255, 255, 255, 0.1); border-right: 0; }
-#swarm-rebuild-root .sr-hud[data-mobile][data-corner$="l"].sr-collapsed { border-radius: 0 8px 8px 0; border: 1px solid rgba(255, 255, 255, 0.1); border-left: 0; }
-#swarm-rebuild-root .sr-hud[data-mobile].sr-collapsed .sr-chev { transform: rotate(135deg); margin: 0 0 0 2px; }
-#swarm-rebuild-root .sr-hud[data-mobile][data-corner$="l"].sr-collapsed .sr-chev { transform: rotate(-45deg); margin: 0 2px 0 0; }
-#swarm-rebuild-root .sr-hud[data-mobile].sr-collapsed .sr-tbar { height: 22px; }
 
 @media (prefers-reduced-motion: reduce) {
   #swarm-rebuild-root { display: none; }

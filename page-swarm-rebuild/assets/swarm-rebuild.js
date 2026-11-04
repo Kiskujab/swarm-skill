@@ -1,14 +1,19 @@
 /*!
- * swarm-rebuild v1.0.1
+ * swarm-rebuild v1.1.0
  * "The page rebuilds itself": a swarm of agent cursors re-creates an existing
  * page layer by layer (frames, typing, image reveals, clone-and-rewrite),
- * with an auto-scrolling tour and a small control bar.
+ * following the visitor's scrolling.
  *
- * - No dependencies, no network requests.
+ * - No dependencies, no network requests (except the optional debug add-on,
+ *   swarm-rebuild-debug.js, loaded only with ?rebuild-debug=1 or debug: true).
  * - Presentation only: the page's own DOM (everything inside <body>) is never
  *   modified. Hiding/revealing is done with one cascade-layered stylesheet in
  *   <head>; animation happens in an overlay appended to <html>. When the effect
  *   ends, both are removed and the document is back to its original state.
+ * - Never leaves the page half hidden: any click or key shows the finished page,
+ *   whatever scrolls above the view is finished at once, a failing or stuck part
+ *   is finished on its own, and a CSS dead-man switch shows the page even if the
+ *   script stops running.
  * - Works as a classic <script> (window.SwarmRebuild) or as a side-effect
  *   import from a bundler (React / Next.js client component).
  */
@@ -17,21 +22,30 @@
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   if (window.SwarmRebuild && window.SwarmRebuild.version) return;
 
-  var VERSION = '1.0.1';
+  var VERSION = '1.1.0';
   var LAYER = 'swarm-rebuild';
   var HIDE_ID = 'swarm-rebuild-hide';
   var REVEAL_ID = 'swarm-rebuild-reveal';
   var ROOT_ID = 'swarm-rebuild-root';
   var SEEN_KEY = 'swarm-rebuild:seen';
-  var HUD_KEY = 'swarm-rebuild:hud';      // visitor's collapse choice for the control bar (this session)
-  var AHEAD = 0.5;                        // visitor-driven: build at most half a viewport below the visible area
-  var HIDE_CSS = '@layer ' + LAYER + '{body *{visibility:hidden!important}}';
+  var AHEAD = 0.5;        // build at most half a viewport below the visible area
+  var ABOVE = 0.1;        // hysteresis: a layer that is this much (of a viewport, min. 40 px) above the view is finished at once
+  var TASK_MAX = 8;       // s: a task running longer than this is finished without animation (watchdog)
+  var LOOP_MAX = 2.5;     // s without an animation frame while the tab is visible: show the page
+  var STALL_MAX = 10;     // s without any progress while layers in view wait: show the page
+  var DMS_MS = 5000;      // CSS dead-man switch: the page is shown this long after the script stops refreshing it
+  var HIDDEN_MAX = 30;    // s in a background tab: show the finished page on return
+  // --sr-v / --sr-o are set only by the dead-man switch animation on <html> (see dmsStart)
+  var HIDE_CSS = '@layer ' + LAYER + '{body *{visibility:var(--sr-v,hidden)!important}#' + ROOT_ID + '{opacity:var(--sr-o,1)!important}}';
+  var DMS_KF = [{ '--sr-v': 'visible', '--sr-o': '0' }];
   var PALETTE = ['#5fd6e8', '#f4a3b8', '#f6c48d', '#a99cf5', '#6aa7ff', '#8fe3b5', '#f2f4f8'];
   var MODE_SPEED = { tour: 1, fast: 6, scroll: 3 };
   var LAYERS_PER_SEC = 7.1; // video: 364 layers in 51.4 s at 1x
+  var MODKEY = { Shift: 1, Control: 1, Alt: 1, AltGraph: 1, Meta: 1, OS: 1, Super: 1, Hyper: 1, Fn: 1, FnLock: 1, CapsLock: 1, NumLock: 1, ScrollLock: 1, Symbol: 1, SymbolLock: 1, Dead: 1, Process: 1, Unidentified: 1 };
+  var ACTION = 'a[href],area[href],button,input,select,textarea,label,summary,details,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[role="checkbox"],[role="switch"],[onclick],[tabindex],[contenteditable=""],[contenteditable="true"]';
 
   var DEFAULTS = {
-    mode: 'fast',            // 'tour' | 'fast' | 'scroll'
+    mode: 'scroll',          // 'scroll' (follows the visitor, 3x) | 'fast' (follows the visitor, 6x) | 'tour' (debug only: auto-scroll, 1x)
     speed: null,             // base time scale; null = per mode (tour 1, fast 6, scroll 3)
     agents: null,            // max agents; null = auto (layers/8, clamped 10..30)
     colors: PALETTE,
@@ -42,11 +56,13 @@
     skipIf: null,            // function returning true to skip the effect
     monogram: null,          // text shown while scanning; null = first letter of <title>
     once: true,              // run once per browser session (sessionStorage)
-    autoExit: null,          // seconds after finishing to "Go live" automatically; null = per mode
+    autoExit: null,          // seconds after finishing to remove the overlay; null = 3 (debug: 6, tour: never)
     groupMin: 3,             // min. repeated siblings to use clone-and-rewrite
     rulers: true,
-    controlsPosition: 'right', // control bar: 'right' | 'left' | 'bottom' (mobile: a small tab near a free corner)
-    avoid: 'a[href^="tel:"],a[href^="mailto:"],button,[role="button"],input,select,textarea,[data-swarm-avoid]', // the mobile tab never covers these
+    debug: false,            // load swarm-rebuild-debug.js: control bar, tour, test hooks (also ?rebuild-debug=1)
+    debugSrc: null,          // URL of swarm-rebuild-debug.js; null = next to this file
+    controlsPosition: 'right', // debug control bar: 'right' | 'left' | 'bottom' (mobile: a small tab near a free corner)
+    avoid: 'a[href^="tel:"],a[href^="mailto:"],button,[role="button"],input,select,textarea,[data-swarm-avoid]', // debug bar on mobile never covers these
     force: false,
     onDone: null
   };
@@ -58,12 +74,16 @@
   function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
   function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
   function rand(a, b) { return a + Math.random() * (b - a); }
+  function warn(msg, err) { try { console.warn('[swarm-rebuild] ' + msg, err || ''); } catch (e) { /* ignore */ } }
+  // everything a running task creates in the overlay is recorded, so a failed or skipped task can be cleaned up
+  function own(el) { var c = S && S.cur; if (c) (c.bag || (c.bag = [])).push(el); return el; }
   function mk(tag, cls, parent) {
     var e = document.createElement(tag);
     if (cls) e.className = cls;
-    if (parent) parent.appendChild(e);
+    if (parent) { parent.appendChild(e); if (S && parent === S.world) own(e); }
     return e;
   }
+  function rm(e) { if (e && e.parentNode) e.parentNode.removeChild(e); }
   function alphaOf(c) {
     if (!c || c === 'transparent') return 0;
     var m = /rgba?\(([^)]+)\)/.exec(c);
@@ -99,7 +119,6 @@
   }
   function shortAngle(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
 
-  var SVG_NS = 'http://www.w3.org/2000/svg';
   var ICON_ARROW = '<svg class="sr-i-arrow" width="22" height="22" viewBox="0 0 24 24"><path d="M3.3 2.6 21 10.1c.7.3.6 1.3-.1 1.5l-7.4 1.9-1.9 7.4c-.2.7-1.2.8-1.5.1L2.6 3.3c-.2-.5.2-.9.7-.7Z" fill="currentColor" stroke="rgba(255,255,255,.85)" stroke-width="1.1" stroke-linejoin="round"/></svg>';
   var ICON_CROSS = '<svg class="sr-i-cross" width="18" height="18" viewBox="0 0 18 18"><path d="M9 1v16M1 9h16" stroke="rgba(6,10,18,.75)" stroke-width="4" stroke-linecap="round"/><path d="M9 1.5v15M1.5 9h15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   var ICON_IBEAM = '<svg class="sr-i-ibeam" width="10" height="20" viewBox="0 0 10 20"><path d="M2 1.5c1.6 0 3 .6 3 2v13c0 1.4-1.4 2-3 2M8 1.5c-1.6 0-3 .6-3 2v13c0 1.4 1.4 2 3 2M3 10h4" fill="none" stroke="rgba(6,10,18,.8)" stroke-width="3" stroke-linecap="round"/><path d="M2 1.5c1.6 0 3 .6 3 2v13c0 1.4-1.4 2-3 2M8 1.5c-1.6 0-3 .6-3 2v13c0 1.4 1.4 2 3 2M3 10h4" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/></svg>';
@@ -117,14 +136,38 @@
     if (!e) {
       e = document.createElement('style');
       e.id = HIDE_ID;
-      e.textContent = HIDE_CSS;
       (document.head || document.documentElement).appendChild(e);
     }
+    if (e.textContent !== HIDE_CSS) e.textContent = HIDE_CSS; // an older head snippet: use the current rule
     return e;
   }
   function removeStyles() {
-    var a = hideEl(); if (a) a.remove();
-    var b = document.getElementById(REVEAL_ID); if (b) b.remove();
+    rm(hideEl());
+    rm(document.getElementById(REVEAL_ID));
+  }
+
+  // ------------------------------------------------- CSS dead-man switch
+  // A Web Animation on <html> that, after DMS_MS, sets --sr-v: visible (every element shows its own visibility
+  // again) and --sr-o: 0 (overlay invisible). The running effect pushes the deadline back on every frame.
+  // If the script stops (an error, a frozen loop, a killed timer), the browser itself shows the page.
+  function dmsStart() {
+    var a = window.__srDms;
+    if (!a || a.playState === 'finished') {
+      try { a = document.documentElement.animate(DMS_KF, { duration: 1, delay: DMS_MS, fill: 'forwards' }); } catch (e) { a = null; }
+    }
+    window.__srDms = a;
+    return a;
+  }
+  function dmsFired() { var a = window.__srDms; return !!(a && a.playState === 'finished'); }
+  function dmsBeat(delay) {
+    var a = window.__srDms;
+    if (!a) return;
+    try { if (delay) a.effect.updateTiming({ delay: delay }); a.currentTime = 0; } catch (e) { /* ignore */ }
+  }
+  function dmsStop() {
+    var a = window.__srDms;
+    window.__srDms = null;
+    if (a) { try { a.cancel(); } catch (e) { /* ignore */ } }
   }
 
   // ---------------------------------------------------------------- proxies
@@ -157,20 +200,21 @@
     c.setAttribute('aria-hidden', 'true');
     c.setAttribute('inert', '');
     st.world.appendChild(c);
+    own(c);
     var typer = new Typer(c, empty, st.world);
-    return { el: c, typer: typer };
+    return { el: c, typer: typer, kill: function () { typer.end(); rm(c); } };
   }
+  // Typing: every text node is split into the typed part and a hidden rest, so each word already sits at its
+  // final place (no reflow while typing: words never jump to the next line, nothing counts as a layout shift).
   function Typer(root, empty, world) {
     this.world = world;
     this.nodes = [];
     this.total = 0;
-    var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
-    var n;
-    while ((n = w.nextNode())) {
-      if (!/\S/.test(n.data)) continue;
-      var full = n.data.replace(/\s+/g, ' ');
-      this.nodes.push({ n: n, full: full, shown: full.length });
-      this.total += full.length;
+    var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), list = [], n;
+    while ((n = w.nextNode())) if (/\S/.test(n.data)) list.push(n);
+    for (var i = 0; i < list.length; i++) {
+      this.nodes.push({ n: list[i], full: list[i].data, rest: null, shown: list[i].data.length });
+      this.total += list[i].data.length;
     }
     this.caret = null;
     if (empty) this.set(0);
@@ -179,7 +223,14 @@
     var rem = Math.max(0, Math.floor(k)), last = null;
     for (var i = 0; i < this.nodes.length; i++) {
       var o = this.nodes[i], take = Math.min(rem, o.full.length);
-      if (o.shown !== take) { o.n.data = o.full.slice(0, take); o.shown = take; }
+      if (o.shown !== take) {
+        if (!o.rest) { // created on first use only (copies that are never typed keep their structure)
+          o.rest = document.createElement('sr-r');
+          o.rest.setAttribute('style', 'all:unset;visibility:hidden');
+          o.n.parentNode.insertBefore(o.rest, o.n.nextSibling);
+        }
+        o.n.data = o.full.slice(0, take); o.rest.textContent = o.full.slice(take); o.shown = take;
+      }
       rem -= take;
       if (take > 0 || !last) last = o;
     }
@@ -188,6 +239,7 @@
       this.caret = document.createElement('i'); this.caret.className = 'sr-caret';
       this.caret.style.color = getComputedStyle(last.n.parentNode).color;
       this.world.appendChild(this.caret);
+      own(this.caret);
     }
     if (this.caret && last && last.n.parentNode) {
       var r = this.range || (this.range = document.createRange()), len = last.n.data.length, rc;
@@ -197,7 +249,7 @@
       this.caret.style.transform = 'translate3d(' + (rc.right + window.scrollX + 1) + 'px,' + (rc.top + window.scrollY) + 'px,0)';
     }
   };
-  Typer.prototype.end = function () { this.set(this.total); if (this.caret) this.caret.remove(); this.caret = null; };
+  Typer.prototype.end = function () { this.set(this.total); rm(this.caret); this.caret = null; };
 
   // -------------------------------------------------------------- overlay UI
   function Sel(st, red) {
@@ -207,6 +259,7 @@
     this.label = mk('span', 'sr-size', e);
     this.el = e; this.txt = ''; this.big = false; this.st = st;
     this.ghost = null; this.hist = [];
+    this.x = this.y = this.w = this.h = 0;
   }
   Sel.prototype.set = function (x, y, w, h, ghost) {
     var s = this.el.style;
@@ -229,24 +282,33 @@
       var gs = this.ghost.style;
       gs.transform = 'translate3d(' + g[0] + 'px,' + g[1] + 'px,0)';
       gs.width = g[2] + 'px'; gs.height = g[3] + 'px';
-    } else if (this.ghost) { this.ghost.remove(); this.ghost = null; }
+    } else if (this.ghost) { rm(this.ghost); this.ghost = null; }
   };
   Sel.prototype.out = function () {
-    var e = this.el, g = this.ghost;
+    var e = this.el;
     e.classList.add('sr-out');
-    if (g) g.remove();
-    setTimeout(function () { e.remove(); }, 260);
+    rm(this.ghost); this.ghost = null;
+    fading(this.st, e, this.y + this.h + 24, 260);
   };
+  Sel.prototype.kill = function () { rm(this.el); rm(this.ghost); this.ghost = null; };
+  // fading leftovers: removed after their fade, or at once when they scroll above the view
+  function fading(st, el, bottom, ms) {
+    var o = { el: el, b: bottom };
+    st.outs.push(o);
+    st.timers.push(setTimeout(function () { rm(el); var i = st.outs.indexOf(o); if (i >= 0) st.outs.splice(i, 1); }, ms));
+  }
   function Ph(st, media) {
     var e = mk('div', 'sr-ph' + (media ? ' sr-ph-media' : ''), st.world);
-    if (media) e.innerHTML = ICON_IMG;
+    if (media) { e.innerHTML = ICON_IMG; this.ic = e.firstChild; }
     this.el = e;
   }
   Ph.prototype.set = function (x, y, w, h) {
     var s = this.el.style;
     s.transform = 'translate3d(' + x + 'px,' + y + 'px,0)'; s.width = w + 'px'; s.height = h + 'px';
+    // the icon is centred with a transform: a growing placeholder never moves it by layout (no layout shift)
+    if (this.ic) this.ic.style.transform = 'translate(' + (w / 2 - 11) + 'px,' + (h / 2 - 11) + 'px)';
   };
-  Ph.prototype.remove = function () { this.el.remove(); };
+  Ph.prototype.remove = function () { rm(this.el); };
 
   function Agent(st, i) {
     this.i = i;
@@ -281,77 +343,123 @@
   };
 
   // =================================================================== run
-  var S = null;
+  var S = null, pending = null, stopped = false;
+  var SCRIPT = document.currentScript, SCRIPT_SRC = SCRIPT && SCRIPT.src;
   var api = {
     version: VERSION,
     active: false,
+    defaults: assign({}, DEFAULTS),
     start: start,
-    stop: function () { if (S) teardown(S, false); },
-    skip: function () { if (S) finishNow(S); },
-    goLive: function () { if (S) finishNow(S); },
+    stop: function () { stopped = true; if (S) teardown(S, false); else if (pending) { pending = null; removeStyles(); dmsStop(); api.active = false; } },
+    skip: function () { if (S) finishNow(S, 'api'); },
+    goLive: function () { if (S) finishNow(S, 'api'); },
     replay: function () { if (S) replay(S); },
-    state: function () { return S ? snapshot(S) : { phase: 'idle' }; },
+    state: function () { return S ? snapshot(S) : { phase: 'idle', lastExit: api._lastExit || null }; },
     stats: function () { return S ? fpsStats(S) : (api._lastStats || null); },
-    headSnippet: function () { return '<script>' + SNIPPET + '<\/script>'; }
+    headSnippet: function () { return '<script>' + SNIPPET + '<\/script>'; },
+    // test hook: freeze the animation (the dead-man switch keeps being refreshed)
+    _pause: function (on) { if (S) S.paused = !!on; }
   };
-  var SNIPPET = "(function(d,w){w.__swarmRebuildSnippet=1;try{var q=new URLSearchParams(location.search).get('rebuild');if(q==='0')return;if(w.matchMedia&&w.matchMedia('(prefers-reduced-motion: reduce)').matches)return;if(q!=='1'&&sessionStorage.getItem('swarm-rebuild:seen'))return;var s=d.createElement('style');s.id='swarm-rebuild-hide';s.textContent='@layer swarm-rebuild{body *{visibility:hidden!important}}';d.head.appendChild(s);setTimeout(function(){var r=w.SwarmRebuild;if(!(r&&r.active)){var e=d.getElementById('swarm-rebuild-hide');if(e)e.remove()}},5000)}catch(e){}})(document,window);";
+  // Head snippet: hides the content before first paint, starts the dead-man switch, and shows the page again
+  // after 5 s if the module never started (blocked, failed to load).
+  var SNIPPET = "(function(d,w){w.__swarmRebuildSnippet=1;try{var q=new URLSearchParams(location.search).get('rebuild');if(q==='0')return;if(w.matchMedia&&w.matchMedia('(prefers-reduced-motion: reduce)').matches)return;if(q!=='1'&&sessionStorage.getItem('swarm-rebuild:seen'))return;var s=d.createElement('style');s.id='swarm-rebuild-hide';s.textContent='" + HIDE_CSS + "';d.head.appendChild(s);try{w.__srDms=d.documentElement.animate([{'--sr-v':'visible','--sr-o':'0'}],{duration:1,delay:" + DMS_MS + ",fill:'forwards'})}catch(e){}setTimeout(function(){var r=w.SwarmRebuild;if(!(r&&r.active)){var e=d.getElementById('swarm-rebuild-hide');if(e)e.remove()}}," + DMS_MS + ")}catch(e){}})(document,window);";
 
   function motionOff(o) {
     try { return !!(o.motionOffSelector && document.querySelector(o.motionOffSelector)); } catch (e) { return false; }
   }
 
   function start(userOpts) {
-    if (S) return api;
+    if (S || pending) return api;
+    stopped = false;
     var q = params();
     var o = assign({}, DEFAULTS, window.SwarmRebuildConfig, userOpts);
+    if (q.get('rebuild-debug') === '1') o.debug = true;
     if (q.get('rebuild-mode')) o.mode = q.get('rebuild-mode');
-    if (!MODE_SPEED[o.mode]) o.mode = 'fast';
+    if (!MODE_SPEED[o.mode]) o.mode = DEFAULTS.mode;
+    if (o.debug) {
+      // test-only parameters
+      if (q.get('rebuild-speed')) o.speed = parseFloat(q.get('rebuild-speed')) || null;
+      if (q.get('rebuild-fault')) o.fault = q.get('rebuild-fault');
+      if (q.get('rebuild-hidden-max')) o.hiddenMax = parseFloat(q.get('rebuild-hidden-max'));
+    }
     var force = o.force || q.get('rebuild') === '1';
     var skip = q.get('rebuild') === '0' || reducedMotion() || motionOff(o) || (typeof o.skipIf === 'function' && o.skipIf());
     if (!skip && !force && o.once && store(SEEN_KEY)) skip = true;
     if (!skip && !hideEl() && window.__swarmRebuildSnippet && !force) skip = true; // snippet decided "no" (or its watchdog fired)
-    if (skip) { removeStyles(); return api; }
+    if (!skip && dmsFired()) skip = true;      // the dead-man switch already showed the page: too late to start
+    if (skip) { removeStyles(); dmsStop(); return api; }
     ensureHide();
+    dmsStart();
     store(SEEN_KEY, '1');
-    run(o);
+    if (o.debug && !window.SwarmRebuildDebug) {
+      api.active = true;
+      pending = o;
+      loadDebug(o, function () { if (pending !== o) return; pending = null; if (!stopped) run(o); });
+    } else run(o);
     return api;
+  }
+  function loadDebug(o, cb) {
+    var src = o.debugSrc || (SCRIPT_SRC && /swarm-rebuild(\.min)?\.js/.test(SCRIPT_SRC) ? SCRIPT_SRC.replace(/swarm-rebuild(\.min)?\.js/, 'swarm-rebuild-debug$1.js') : null);
+    var done = false, fin = function () { if (!done) { done = true; cb(); } };
+    if (!src) { warn('debug: set debugSrc (or import swarm-rebuild-debug.js first); running without the debug tools'); return fin(); }
+    var s = document.createElement('script');
+    s.src = src; s.async = true;
+    s.onload = fin;
+    s.onerror = function () { warn('debug: could not load ' + src); fin(); };
+    setTimeout(fin, 4000);
+    (document.head || document.documentElement).appendChild(s);
   }
 
   function run(o) {
     var st = S = {
       o: o, t0: now(), last: now(), phase: 'scan', layers: [], queue: [], active: [], groups: [],
       tails: [], instant: [], reveals: [], doneLayers: 0, totalLayers: 0, tokens: 1, qHead: 0,
-      mult: 1, touring: o.mode !== 'scroll', camY: 0, camV: 0, frames: [], rulersUntil: 0,
-      sections: [], sectionOpen: [], timers: [], listeners: [], fixedEls: [],
+      mult: 1, touring: false, camY: 0, camV: 0, frames: [], rulersUntil: 0,
+      sections: [], sectionOpen: [], timers: [], listeners: [], fixedEls: [], stickyEls: [], outs: [],
+      revealed: new WeakSet(), holeEls: [], holeKey: '',
       seenStats: { initial: { pending: 0, active: 0, done: 0 }, tour: { pending: 0, active: 0, done: 0 }, manual: { pending: 0, active: 0, done: 0 } },
-      waits: [], maxAhead: 0
+      waits: [], maxAhead: 0, aboveSkips: 0, aborts: 0, errors: 0, late: 0
     };
     api.active = true;
+    var factory = window.SwarmRebuildDebug;
+    if (o.debug && typeof factory === 'function') {
+      try { st.dbg = factory(core, st); } catch (e) { warn('debug add-on failed', e); st.dbg = null; }
+    }
+    if (o.mode === 'tour' && !st.dbg) { warn('mode "tour" needs the debug add-on (?rebuild-debug=1); using "scroll"'); o.mode = 'scroll'; }
+    st.touring = o.mode === 'tour';
     st.speedBase = o.speed || MODE_SPEED[o.mode];
+    st.hiddenMax = o.hiddenMax != null && !isNaN(o.hiddenMax) ? o.hiddenMax : HIDDEN_MAX;
     st.mobile = window.innerWidth < 760 || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
     st.useRulers = o.rulers && !st.mobile;
-    st.pos = { right: 1, left: 1, bottom: 1 }[o.controlsPosition] ? o.controlsPosition : 'right';
     st.openScale = Math.min(st.speedBase, 3);
     st.scanDur = 0.85 / st.openScale;
     st.bg = pageBg();
-    if (o.mode !== 'scroll') { window.scrollTo({ top: 0, left: 0, behavior: 'instant' }); }
+    st.vw0 = window.innerWidth;
+    if (st.touring) { window.scrollTo({ top: 0, left: 0, behavior: 'instant' }); }
     st.camY = window.scrollY;
+    st.lastTick = st.progressAt = now();
     buildOverlay(st);
+    if (st.dbg) st.dbg.init(st);
     // provisional agent count for the opening swarm; refined after the scan
     st.maxAgents = clamp(o.agents || 30, 6, 30);
     if (st.mobile) st.maxAgents = Math.min(st.maxAgents, 8);
     createAgents(st);
     bindEvents(st);
+    if (o.fault) setupFault(st, o.fault);
     var fontsReady = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
     Promise.race([fontsReady, new Promise(function (r) { setTimeout(r, 700); })]).then(function () {
       if (S !== st) return;
-      try { scan(st); plan(st); } catch (err) { console.warn('[swarm-rebuild] scan failed, showing page', err); finishNow(st); return; }
+      try { scan(st); plan(st); } catch (err) { warn('scan failed, showing the page', err); finishNow(st, 'error'); return; }
       st.scanned = true;
-      measureGutter(st);
-      autoCollapse(st);
-      placeHud(st, true);
+      if (st.dbg) st.dbg.scanned(st);
     });
-    st.raf = requestAnimationFrame(function f() { if (S !== st) return; tick(st); st.raf = requestAnimationFrame(f); });
+    st.raf = requestAnimationFrame(function f() {
+      if (S !== st || st.dead) return;
+      try { tick(st); } catch (err) { fail(st, err); return; }
+      if (S === st && !st.dead) st.raf = requestAnimationFrame(f);
+    });
+    // watchdog outside the animation loop (also runs when an error stopped the loop)
+    st.timers.push(setInterval(function () { if (S === st && !st.dead) { try { watch(st); } catch (err) { fail(st, err); } } }, 1000));
   }
 
   function pageBg() {
@@ -366,9 +474,9 @@
   function buildOverlay(st) {
     var root = mk('div', 'sr-root');
     root.id = ROOT_ID;
+    root.setAttribute('aria-hidden', 'true');
     root.style.setProperty('--sr-bg', st.bg);
-    var deco = mk('div', 'sr-deco', root);
-    deco.setAttribute('aria-hidden', 'true');
+    var deco = st.deco = mk('div', 'sr-deco', root);
     st.world = mk('div', 'sr-world', deco);
     st.guideLayer = mk('div', 'sr-guides', deco);
     st.rulerTop = mk('div', 'sr-ruler sr-ruler-top', deco);
@@ -383,155 +491,8 @@
     st.mono.textContent = st.o.monogram || ((document.title || 'S').trim().charAt(0) || 'S').toUpperCase();
     st.guides = [];
     for (k = 0; k < 16; k++) st.guides.push(mk('i', 'sr-guide', st.guideLayer));
-
-    var hud = mk('div', 'sr-hud', root);
-    hud.setAttribute('role', 'region');
-    hud.setAttribute('aria-label', 'Page rebuild animation');
-    hud.setAttribute('data-state', 'scan');
-    hud.setAttribute('data-pos', st.pos);
-    if (st.mobile) hud.setAttribute('data-mobile', '');
-    st.hud = hud;
-    st.btnTab = mk('button', 'sr-tab', hud);
-    mk('i', 'sr-chev', st.btnTab).setAttribute('aria-hidden', 'true');
-    var tb = mk('i', 'sr-tbar', st.btnTab);
-    tb.setAttribute('aria-hidden', 'true');
-    mk('b', '', tb);
-    var stat = mk('div', 'sr-stat', hud);
-    mk('span', 'sr-scan', stat).textContent = 'Scanning page…';
-    var av = mk('span', 'sr-avatars', stat);
-    for (k = 0; k < 5; k++) { var c = mk('i', '', av); c.style.background = st.o.colors[k % st.o.colors.length]; }
-    st.hudAgents = mk('span', 'sr-n-agents', stat);
-    st.hudLayers = mk('span', 'sr-n-layers', stat);
-    st.hudLayers.setAttribute('aria-live', 'off');
-    st.hudDone = mk('span', 'sr-donetext', stat);
-    var bar = mk('div', 'sr-bar', hud);
-    st.hudBar = mk('i', '', bar);
-    var btns = mk('div', 'sr-btns', hud);
-    st.btnTour = mk('button', 'sr-btn sr-tour', btns);
-    st.btnSpeed = mk('button', 'sr-btn sr-speed', btns);
-    st.btnLive = mk('button', 'sr-btn sr-live', btns);
-    st.btnReplay = mk('button', 'sr-btn sr-replay', btns);
-    st.btnClose = mk('button', 'sr-btn sr-close', btns);
-    [st.btnTab, st.btnTour, st.btnSpeed, st.btnLive, st.btnReplay, st.btnClose].forEach(function (b) { b.type = 'button'; });
-    st.btnTour.textContent = 'Tour';
-    st.btnSpeed.textContent = '1×';
-    st.btnSpeed.setAttribute('aria-label', 'Animation speed');
-    st.btnLive.textContent = 'Go live';
-    st.btnReplay.textContent = 'Replay';
-    st.btnClose.textContent = '✕';
-    st.btnClose.setAttribute('aria-label', 'Skip animation and show the page');
-    st.btnTour.setAttribute('aria-pressed', 'false');
-    st.btnTab.addEventListener('click', function () { setCollapsed(st, !st.collapsed, true); });
-    st.btnTour.addEventListener('click', function () {
-      st.touring = !st.touring; st.camV = 0; st.camY = window.scrollY;
-      if (st.touring && st.followed) resumeTour(st);
-      updateHud(st, true);
-    });
-    st.btnSpeed.addEventListener('click', function () { st.mult = st.mult === 1 ? 2 : st.mult === 2 ? 4 : 1; st.btnSpeed.textContent = st.mult + '×'; });
-    st.btnLive.addEventListener('click', function () { finishNow(st); });
-    st.btnReplay.addEventListener('click', function () { replay(st); });
-    st.btnClose.addEventListener('click', function () { finishNow(st); });
     st.root = root;
     document.documentElement.appendChild(root);
-    var pref = store(HUD_KEY);
-    st.userCollapse = pref === 'collapsed' || pref === 'open';
-    setCollapsed(st, pref ? pref === 'collapsed' : st.mobile, false);
-    updateHud(st, true);
-  }
-
-  // ----------------------------------------------------- control bar place
-  function setCollapsed(st, c, byUser) {
-    st.collapsed = c;
-    st.hud.classList.toggle('sr-collapsed', c);
-    st.btnTab.setAttribute('aria-expanded', c ? 'false' : 'true');
-    st.btnTab.setAttribute('aria-label', c ? 'Show animation controls' : 'Hide animation controls');
-    if (byUser) { st.userCollapse = true; store(HUD_KEY, c ? 'collapsed' : 'open'); }
-    placeHud(st, true);
-  }
-  // free space between the page content and the left / right viewport edge
-  function measureGutter(st) {
-    var cw = document.documentElement.clientWidth, sx = window.scrollX, minL = cw, maxR = 0;
-    function acc(x, w) { if (w < 2 || w > cw * 0.85) return; minL = Math.min(minL, x - sx); maxR = Math.max(maxR, x - sx + w); }
-    st.layers.forEach(function (L) { if (L.kind !== 'line') acc(L.x, L.w); });
-    st.groups.forEach(function (g) { g.members.forEach(function (m) { if (m.R) acc(m.R.x, m.R.w); }); });
-    st.gutter = { left: Math.max(0, minL), right: Math.max(0, cw - maxR) };
-  }
-  // desktop: if the expanded bar would sit on the page content, start as a thin tab
-  function autoCollapse(st) {
-    if (st.userCollapse || st.mobile || st.pos === 'bottom' || !st.gutter) return;
-    var need = st.hud.classList.contains('sr-collapsed') ? 80 : st.hud.offsetWidth + 18;
-    if (st.gutter[st.pos] < need && !st.collapsed) setCollapsed(st, true, false);
-  }
-  function obstacles(st) {
-    var out = [], cw = document.documentElement.clientWidth, vh = window.innerHeight;
-    function add(el) {
-      if (!el.isConnected) return;
-      var r = el.getBoundingClientRect();
-      if (r.width < 1 || r.height < 1 || r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= cw) return;
-      if (r.width * r.height > cw * vh * 0.5) return; // full-screen fixed backgrounds are not obstacles
-      out.push(r);
-    }
-    st.fixedEls.forEach(add);
-    if (st.mobile) {
-      if (!st.avoidEls || st.dirtyAvoid) {
-        st.dirtyAvoid = false;
-        var sel = [st.o.avoid, st.o.instant, st.o.exclude].filter(Boolean).join(',');
-        try { st.avoidEls = Array.prototype.slice.call(document.body.querySelectorAll(sel), 0, 400); } catch (e) { st.avoidEls = []; }
-        // links that look like buttons ("Book now", "Call us"): filled or outlined
-        Array.prototype.slice.call(document.body.querySelectorAll('a[href]'), 0, 400).forEach(function (a) {
-          var cs = getComputedStyle(a);
-          if (alphaOf(cs.backgroundColor) > 0.1 || (parseFloat(cs.borderTopWidth) > 0 && parseFloat(cs.paddingLeft) >= 6)) st.avoidEls.push(a);
-        });
-      }
-      st.avoidEls.forEach(add);
-    }
-    return out;
-  }
-  function hits(obs, x, y, w, h) {
-    for (var i = 0; i < obs.length; i++) {
-      var r = obs[i];
-      if (x < r.right + 6 && x + w > r.left - 6 && y < r.bottom + 6 && y + h > r.top - 6) return true;
-    }
-    return false;
-  }
-  // Keeps the control bar off fixed bars, phone links and buttons. Moves only when the current spot is taken.
-  function placeHud(st, force) {
-    var hud = st.hud;
-    if (!hud || !hud.isConnected) return;
-    var cw = document.documentElement.clientWidth, vh = window.innerHeight;
-    var w = hud.offsetWidth, h = hud.offsetHeight, obs = obstacles(st), I = 10;
-    if (st.mobile) {
-      var order = st.pos === 'left' ? ['bl', 'tl', 'br', 'tr'] : st.pos === 'bottom' ? ['br', 'bl', 'tr', 'tl'] : ['br', 'tr', 'bl', 'tl'];
-      var ex = st.collapsed ? 0 : I; // collapsed: a tab flush with the side edge
-      var rectOf = function (c) { return [c.charAt(1) === 'l' ? ex : cw - w - ex, c.charAt(0) === 't' ? I : vh - h - I]; };
-      var cur = st.corner, pick = null;
-      if (!force && cur) { var rc = rectOf(cur); if (!hits(obs, rc[0], rc[1], w, h)) pick = cur; }
-      if (!pick) {
-        pick = order[0];
-        for (var i = 0; i < order.length; i++) { var q = rectOf(order[i]); if (!hits(obs, q[0], q[1], w, h)) { pick = order[i]; break; } }
-      }
-      if (pick !== cur) { st.corner = pick; hud.setAttribute('data-corner', pick); }
-      var pr = rectOf(pick);
-      hudXY(st, pr[0], pr[1]);
-      return;
-    }
-    if (st.pos === 'bottom') return; // centred at the bottom by CSS
-    var x = st.pos === 'left' ? (st.collapsed ? 0 : I) : cw - w - (st.collapsed ? 0 : I);
-    if (!force && st.hudTop != null && !hits(obs, x, st.hudTop, w, h)) { hudXY(st, x, st.hudTop); return; }
-    var fr = [0.58, 0.46, 0.7, 0.34, 0.82], top = null;
-    for (var j = 0; j < fr.length; j++) {
-      var y = clamp(Math.round(vh * fr[j] - h / 2), 8, Math.max(8, vh - h - 8));
-      if (!hits(obs, x, y, w, h)) { top = y; break; }
-    }
-    if (top == null) top = clamp(Math.round(vh * fr[0] - h / 2), 8, Math.max(8, vh - h - 8));
-    st.hudTop = top;
-    hudXY(st, x, top);
-  }
-  // the bar is moved with a transform only, so moving it never counts as a layout shift
-  function hudXY(st, x, y) {
-    if (x === st.hudX && y === st.hudY) return;
-    st.hudX = x; st.hudY = y;
-    st.hud.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)';
   }
 
   function createAgents(st) {
@@ -549,30 +510,143 @@
     for (var j = 0; j < st.activeAgents; j++) st.agents[j].show(true);
   }
 
+  // ----------------------------------------------------------------- exits
+  // Esc, any other key (not a lone modifier) and any click or tap show the finished page at once.
+  // A click on something that was not finished yet is swallowed: the visitor could not see what they hit,
+  // so it must not follow a link or press a button. A click on something already finished goes through.
   function bindEvents(st) {
-    function on(t, ev, fn, opt) { t.addEventListener(ev, fn, opt); st.listeners.push([t, ev, fn, opt]); }
-    var stopTour = function () {
-      if (st.touring && st.phase !== 'done') {
-        // the tour hands over to the visitor: the build goes on where they look (see dispatchFollow)
-        st.touring = false;
-        if (st.phase === 'build') { st.followed = true; growAgents(st, st.maxAgents); }
-        updateHud(st, true);
-      }
-    };
-    on(window, 'wheel', stopTour, { passive: true });
-    on(window, 'touchmove', stopTour, { passive: true });
+    function on(t, ev, fn, opt) {
+      var g = function (e) { if (S !== st || st.dead) return; try { fn(e); } catch (err) { fail(st, err); } };
+      t.addEventListener(ev, g, opt); st.listeners.push([t, ev, g, opt]);
+    }
+    st.on = on;
     on(window, 'keydown', function (e) {
-      if (e.key === 'Escape') { finishNow(st); return; }
-      if (/^(ArrowUp|ArrowDown|PageUp|PageDown|Home|End| )$/.test(e.key)) stopTour();
+      if (MODKEY[e.key] || e.isComposing) return;
+      if (e.key !== 'Escape' && st.root.contains(e.target)) return; // keyboard use of the debug bar
+      finishNow(st, 'key');
+    }, true);
+    on(window, 'pointerdown', function (e) {
+      if (e.pointerType === 'touch') return; // may be the start of a scroll: a tap ends the effect on "click"
+      if (st.root.contains(e.target)) return;
+      var de = document.documentElement;
+      if (e.clientX >= de.clientWidth || e.clientY >= de.clientHeight) return; // the scrollbar scrolls
+      exitByPointer(st, e);
+    }, true);
+    on(window, 'click', function (e) { if (!st.root.contains(e.target)) exitByPointer(st, e); }, true);
+    on(window, 'resize', function () {
+      // a new width reflows the page: show it as it is now instead of animating stale positions
+      if (Math.abs(window.innerWidth - st.vw0) > 2) finishNow(st, 'resize');
+      else if (st.dbg) st.dbg.resize(st);
     });
-    var rt = 0;
-    on(window, 'resize', function () { clearTimeout(rt); rt = setTimeout(function () { if (S === st) onResize(st); }, 220); });
+    on(document, 'visibilitychange', function () {
+      if (document.hidden) { st.hiddenAt = now(); dmsBeat(600000); return; }
+      var away = st.hiddenAt ? now() - st.hiddenAt : 0;
+      st.hiddenAt = 0; st.lastTick = st.progressAt = now();
+      dmsBeat(DMS_MS);
+      if (away > st.hiddenMax) finishNow(st, 'hidden');
+    });
+    on(window, 'pageshow', function (e) { if (e.persisted) finishNow(st, 'pageshow'); });
+    if (st.dbg) st.dbg.bind(st, on);
     if (window.MutationObserver) {
       st.mo = new MutationObserver(function (list) {
-        for (var i = 0; i < list.length; i++) if (list[i].type === 'childList') { st.dirtySel = true; st.dirtyAvoid = true; return; }
+        if (S !== st || st.dead) return;
+        try {
+          for (var i = 0; i < list.length; i++) {
+            if (list[i].type !== 'childList') continue;
+            st.dirtySel = true;
+            var add = list[i].addedNodes;
+            for (var j = 0; j < add.length; j++) if (add[j].nodeType === 1 && st.scanned) addLate(st, add[j]);
+          }
+        } catch (err) { fail(st, err); }
       });
       st.mo.observe(document.body, { childList: true, subtree: true });
     }
+  }
+  function exitByPointer(st, e) {
+    var tg = e.target && e.target.nodeType === 1 ? e.target : e.target && e.target.parentElement;
+    var act = tg && tg.closest ? (tg.closest(ACTION) || tg) : tg;
+    if (!act || !settled(st, act)) {
+      e.preventDefault(); e.stopPropagation();
+      if (e.type === 'pointerdown') swallowClick();
+    }
+    finishNow(st, 'click');
+  }
+  function swallowClick() {
+    var kill = function (e) { e.preventDefault(); e.stopPropagation(); off(); };
+    var off = function () { window.removeEventListener('click', kill, true); clearTimeout(tm); };
+    var tm = setTimeout(off, 1000);
+    window.addEventListener('click', kill, true);
+  }
+  // finished = visible, and no unfinished layer is it, inside it, or reveals it
+  function settled(st, el) {
+    if (st.phase === 'done' || el === document.body || el === document.documentElement) return true;
+    if (getComputedStyle(el).visibility !== 'visible') return false;
+    for (var i = 0; i < st.layers.length; i++) {
+      var L = st.layers[i];
+      if (L.state === 'done') continue;
+      if (L.el === el || el.contains(L.el) || (L.tree && L.el.contains(el))) return false;
+    }
+    for (var j = 0; j < st.groups.length; j++) {
+      var g = st.groups[j];
+      if (!g.item || g.item.state === 'done') continue;
+      for (var k = 0; k < g.members.length; k++) { var m = g.members[k].el; if (m === el || m.contains(el) || el.contains(m)) return false; }
+    }
+    return true;
+  }
+  // content added to the page after the scan is not animated: it is shown at once
+  function addLate(st, el) {
+    if (SKIP_TAG[el.localName]) return;
+    if (++st.late > 300) { finishNow(st, 'mutations'); return; } // the page was replaced (e.g. client-side navigation)
+    revealEl(st, el, true);
+    try { if (getComputedStyle(el).position === 'fixed') st.fixedEls.push(el); } catch (e) { /* ignore */ }
+  }
+
+  // ------------------------------------------------------------- protection
+  function fail(st, err) {
+    st.errors++;
+    warn('unexpected error, showing the page', err);
+    try { finishNow(st, 'error'); } catch (e) { hardReset(); }
+  }
+  function hardReset() {
+    try { rm(document.getElementById(ROOT_ID)); } catch (e) { /* ignore */ }
+    try { removeStyles(); dmsStop(); } catch (e) { /* ignore */ }
+    if (S) { try { cancelAnimationFrame(S.raf); S.timers.forEach(clearTimeout); } catch (e) { /* ignore */ } }
+    S = null; api.active = false; api._lastExit = 'error';
+  }
+  function watch(st) {
+    var t = now();
+    if (document.hidden || st.paused) { st.lastTick = t; st.progressAt = t; return; }
+    if (t - st.lastTick > LOOP_MAX) { warn('the animation loop stopped, showing the page'); finishNow(st, 'watchdog'); return; }
+    if (st.phase === 'scan' && t - st.t0 > 6) { warn('the scan did not finish, showing the page'); finishNow(st, 'watchdog'); return; }
+    if (st.phase === 'build' && t - st.progressAt > STALL_MAX && (st.touring || st.visPending > 0)) {
+      warn('no progress for ' + STALL_MAX + ' s, showing the page'); finishNow(st, 'watchdog');
+    }
+  }
+  function progress(st) { st.progressAt = now(); }
+  // test-only faults (debug): <kind>@<seconds into the build>, kind = task | stall | loop | die
+  function setupFault(st, spec) {
+    var m = /^(task|stall|loop|die)(?:@([\d.]+))?$/.exec(String(spec));
+    if (!m) { warn('unknown fault ' + spec); return; }
+    st.fault = { kind: m[1], at: m[2] ? parseFloat(m[2]) : 1, fired: false };
+  }
+  function fireFault(st, t) {
+    var f = st.fault;
+    if (!f || f.fired || st.phase !== 'build' || t - st.buildStart < f.at) return;
+    if (f.kind === 'task' || f.kind === 'stall') {
+      var tk = st.active.filter(function (x) { return x.it.type === 'build'; })[0];
+      if (!tk) return;
+      f.fired = true; f.task = { kind: tk.it.L.kind, y: tk.it.L.y };
+      tk[f.kind === 'task' ? 'faultThrow' : 'faultStall'] = true;
+      return;
+    }
+    f.fired = true;
+    if (f.kind === 'loop') throw new Error('injected fault in the frame loop');
+    // "die": the script stops completely, nothing is cleaned up (only the CSS dead-man switch can help)
+    st.dead = true;
+    cancelAnimationFrame(st.raf);
+    st.timers.forEach(clearTimeout);
+    if (st.mo) st.mo.disconnect();
+    api.active = true;
   }
 
   // ------------------------------------------------------------------- scan
@@ -607,7 +681,7 @@
     secs.forEach(function (s, k) { s.i = k; secMap.set(s.el, k); });
     st.sections = secs.map(function (s) { return { y: s.y, h: s.h, total: 0, done: 0, items: 0, itemsDone: 0, tails: [] }; });
 
-    var layers = [], groups = [], instant = [], tails = [];
+    var layers = [], groups = [], instant = [], tails = [], natHidden = [];
     var stack = [];   // open master groups (to collect their layers)
     var exSel = o.exclude, inSel = o.instant;
 
@@ -636,9 +710,10 @@
       var cs = getComputedStyle(el);
       if (cs.display === 'none') return null;
       if (cs.display === 'contents') return { el: el, cs: cs, contents: true };
-      if (cs.visibility !== 'visible') return null;           // hidden by the page itself: leave alone
+      if (cs.visibility !== 'visible') { natHidden.push(el); return null; } // hidden by the page itself: leave alone
       if (parseFloat(cs.opacity) < 0.05) return null;
       if (cs.position === 'fixed' || cs.position === 'sticky') st.fixedEls.push(el);
+      if (cs.position === 'sticky') st.stickyEls.push(el);
       if ((exSel && el.matches(exSel)) || (inSel && el.matches(inSel)) || cs.position === 'fixed') return { el: el, instant: true };
       var r = el.getBoundingClientRect();
       if (r.width < 1 || r.height < 1) {
@@ -677,7 +752,7 @@
       var el = it.el, cs = it.cs, R = it.R, name = el.localName;
       if (it.instant) { instant.push(el); return; }
       if (it.contents) { walk(el, clip); return; }
-      if (it.tail) { tails.push({ el: el, section: sectionOf(el, R.y) }); return; }
+      if (it.tail) { tails.push({ el: el, section: sectionOf(el, R.y), b: R.y + R.h }); return; }
       if (MEDIA[name]) {
         addLayer(el, Math.max(R.w, R.h) < 56 ? 'icon' : 'media', R, true);
         return;
@@ -760,9 +835,11 @@
     walk(document.body, { l: -1e9, t: -1e9, r: 1e9, b: 1e9 });
     if (he && he.sheet) he.sheet.disabled = false;
 
-    st.layers = layers; st.groups = groups; st.instant = instant;
+    st.layers = layers; st.groups = groups; st.instant = instant; st.tails = tails;
     tails.forEach(function (t) { st.sections[t.section].tails.push(t.el); });
     instant.forEach(function (el) { revealEl(st, el, true); });
+    // elements the page hides itself keep their own visibility, also if the dead-man switch shows the page
+    natHidden.forEach(function (el) { st.reveals.push({ el: el, tree: true, exempt: true }); insertReveal(st, el, true, true); });
   }
 
   // ------------------------------------------------------------------- plan
@@ -821,7 +898,6 @@
       g.item = item;
       if (idx < 0) q.push(item); else q.splice(idx + 1, 0, item);
     });
-    // nested groups: outer clone waits for inner clones (deps)
     st.queue = q;
     q.forEach(function (it) {
       var s = st.sections[it.section];
@@ -843,14 +919,15 @@
   // ----------------------------------------------------------- reveal rules
   function revealEl(st, el, tree) {
     st.reveals.push({ el: el, tree: tree });
+    st.revealed.add(el);
     insertReveal(st, el, tree);
   }
-  function insertReveal(st, el, tree) {
+  function insertReveal(st, el, tree, exempt) {
     var block = st.reveal && st.reveal.sheet && st.reveal.sheet.cssRules[0];
     if (!block || !el.isConnected) return;
     var s = pathOf(el);
     try {
-      block.insertRule(s + '{visibility:visible!important}', block.cssRules.length);
+      block.insertRule(s + (exempt ? '{visibility:revert-layer!important}' : '{visibility:visible!important}'), block.cssRules.length);
       if (tree) block.insertRule(s + ' *{visibility:revert-layer!important}', block.cssRules.length);
     } catch (e) { /* ignore */ }
   }
@@ -859,33 +936,96 @@
     if (!block) return;
     while (block.cssRules.length) block.deleteRule(0);
     st.reveals = st.reveals.filter(function (r) { return r.el.isConnected; });
-    st.reveals.forEach(function (r) { insertReveal(st, r.el, r.tree); });
+    st.reveals.forEach(function (r) { insertReveal(st, r.el, r.tree, r.exempt); });
+  }
+
+  // ------------------------------------------------- fixed elements: holes
+  // The overlay never draws over position:fixed elements (and finished sticky ones): they are cut out of it.
+  function holeEls(st) {
+    var out = [];
+    for (var i = 0; i < st.fixedEls.length; i++) {
+      var el = st.fixedEls[i];
+      if (!el.isConnected) continue;
+      if (st.stickyEls.indexOf(el) >= 0 && !(st.revealed.has(el) && settled(st, el))) continue; // sticky: once built
+      out.push(el);
+    }
+    return out;
+  }
+  function updateHoles(st, t, vw, vh) {
+    if (t > (st.holeAt || 0)) { st.holeAt = t + 0.25; st.holeEls = holeEls(st); }
+    var rs = [], key = '';
+    for (var i = 0; i < st.holeEls.length; i++) {
+      var r = st.holeEls[i].getBoundingClientRect();
+      if (r.width < 1 || r.height < 1 || r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) continue;
+      if (r.width * r.height > vw * vh * 0.5) continue; // full-screen fixed backgrounds sit behind the content
+      var x = Math.floor(r.left) - 2, y = Math.floor(r.top) - 2;
+      rs.push({ x: x, y: y, r: Math.ceil(r.right) + 2, b: Math.ceil(r.bottom) + 2 });
+    }
+    // overlapping holes are merged (even-odd filling would otherwise draw their overlap)
+    for (var a = 0; a < rs.length; a++) {
+      for (var b = a + 1; b < rs.length; b++) {
+        var p = rs[a], q = rs[b];
+        if (p.x < q.r && q.x < p.r && p.y < q.b && q.y < p.b) {
+          rs[a] = { x: Math.min(p.x, q.x), y: Math.min(p.y, q.y), r: Math.max(p.r, q.r), b: Math.max(p.b, q.b) };
+          rs.splice(b, 1); b = a;
+        }
+      }
+    }
+    rs.forEach(function (h) { key += h.x + ',' + h.y + ',' + h.r + ',' + h.b + ';'; });
+    if (key === st.holeKey) return;
+    st.holeKey = key;
+    st.holes = rs;
+    st.deco.style.clipPath = clipFor(rs, vw, vh);
+  }
+  // Always a plain inset() when possible (a rectangle clip is cheap; a path / polygon clip makes the browser mask the
+  // whole animated overlay every frame, which costs ~25 % fps without a GPU). Each hole is covered by the cheapest band
+  // from it to a viewport edge (a corner button -> a strip along the bottom edge, etc.); the overlay is simply not drawn
+  // in those strips. Only when the strips would hide more than 40 % of the screen, an even-odd path is used.
+  function clipFor(rs, vw, vh) {
+    if (!rs.length) return '';
+    var t = 0, r = 0, b = 0, l = 0;
+    rs.forEach(function (h) {
+      var o = [[h.b * vw, 't'], [(vh - h.y) * vw, 'b'], [h.r * vh, 'l'], [(vw - h.x) * vh, 'r']].sort(function (p, q) { return p[0] - q[0]; })[0][1];
+      if (o === 't') t = Math.max(t, h.b); else if (o === 'b') b = Math.max(b, vh - h.y);
+      else if (o === 'l') l = Math.max(l, h.r); else r = Math.max(r, vw - h.x);
+    });
+    var kept = Math.max(0, vw - l - r) * Math.max(0, vh - t - b);
+    if (kept >= vw * vh * 0.6) return 'inset(' + Math.max(0, t) + 'px ' + Math.max(0, r) + 'px ' + Math.max(0, b) + 'px ' + Math.max(0, l) + 'px)';
+    var d = 'M0 0H' + vw + 'V' + vh + 'H0Z';
+    rs.forEach(function (h) { d += 'M' + h.x + ' ' + h.y + 'H' + h.r + 'V' + h.b + 'H' + h.x + 'Z'; });
+    return 'path(evenodd,"' + d + '")';
   }
 
   // ------------------------------------------------------------------- tick
   function tick(st) {
     var t = now(), dt = Math.min(0.05, t - st.last);
-    st.last = t;
+    st.last = t; st.lastTick = t;
+    if (t - (st.beatAt || 0) > 0.4) { st.beatAt = t; dmsBeat(); }
+    if (dmsFired()) { warn('the page was shown by the safety timer'); finishNow(st, 'dead-man'); return; }
+    if (st.paused) return;
+    if (st.fault) fireFault(st, t);
+    if (st.dead) return;
     if (st.phase === 'build') st.frames.push(dt);
     if (st.dirtySel) { st.dirtySel = false; rebuildReveals(st); }
     var vw = window.innerWidth, vh = window.innerHeight;
-    if (t > (st.placeAt || 0)) { st.placeAt = t + 0.5; placeHud(st, false); } // read layout before this frame's writes
+    if (st.dbg) st.dbg.frame(st, t); // reads layout before this frame's writes
+    updateHoles(st, t, vw, vh);
 
     if (st.phase === 'scan') {
       var ts = t - st.t0;
       flock(st, ts, vw, vh);
-      if (st.o.mode !== 'scroll' && ts > st.scanDur * 0.7 && !st.touringShown) { st.touringShown = true; updateHud(st, true); }
       if (ts >= st.scanDur && st.scanned) enterBuild(st, t);
     } else if (st.phase === 'build') {
       buildStep(st, t, dt, vw, vh);
     } else if (st.phase === 'done') {
       finaleStep(st, t, dt, vw, vh);
     }
+    if (S !== st) return;
     renderAgents(st, t, dt);
     var sy = window.scrollY, sx = window.scrollX;
     st.world.style.transform = 'translate3d(' + (-sx) + 'px,' + (-sy) + 'px,0)';
     renderGuides(st, t, sy, sx, vw, vh);
-    updateHud(st, false);
+    if (st.dbg) st.dbg.hud(st, false);
   }
 
   function flock(st, ts, vw, vh) {
@@ -908,9 +1048,8 @@
     var vw = window.innerWidth, vh = window.innerHeight, sy = window.scrollY;
     st.phase = 'build';
     st.buildStart = t;
+    progress(st);
     st.mono.classList.add('sr-out');
-    st.hud.setAttribute('data-state', 'build');
-    placeHud(st, false);
     // hide surplus agents (after the scan we know how many we need)
     var startN = Math.min(st.startAgents, st.agents.length);
     st.agents.forEach(function (a, i) { if (i >= startN && a.active) a.show(false); if (i < startN && !a.active) { a.show(true); a.x = vw / 2; a.y = sy + vh / 2; } });
@@ -926,19 +1065,9 @@
     if (st.useRulers) st.rulersUntil = t + 1.45 / os;
     st.sectionOpen = [];
     st.tokens = Math.min(st.startAgents, 6);
+    if (st.dbg) st.dbg.build(st);
   }
 
-  function sectionOpen(st, s, t) {
-    if (st.sectionOpen[s]) return true;
-    var prev = st.sections[s - 1];
-    var ok = s === 0 || !prev || sectionOpen(st, s - 1, t) && (prev.items === prev.itemsDone || prev.itemsDone / Math.max(1, prev.items) >= 0.45 || prev.h < window.innerHeight * 0.35);
-    if (!ok) return false;
-    st.sectionOpen[s] = true;
-    if (s > 0 && st.useRulers && t - st.buildStart > 1.5) st.rulersUntil = Math.max(st.rulersUntil, t + 1.2 / st.openScale);
-    var target = st.startAgents + Math.round((st.maxAgents - st.startAgents) * (st.nSections > 1 ? s / (st.nSections - 1) : 1));
-    growAgents(st, target);
-    return true;
-  }
   function growAgents(st, n) {
     var vw = window.innerWidth, vh = window.innerHeight, sy = window.scrollY;
     n = Math.min(n, st.agents.length);
@@ -950,12 +1079,6 @@
     }
   }
 
-  function inWindow(st, it) {
-    var sy = window.scrollY, vh = window.innerHeight;
-    if (sy >= maxScroll() - 2) return true; // nothing left to scroll: everything is reachable
-    if (st.touring) return it.y < sy + vh * 0.9;
-    return it.y < sy + vh * 2;
-  }
   function depsOk(it) {
     if (it.type === 'build' && it.L.needsBlock && !it.L.blocked) return false;
     if (it.type === 'clone') {
@@ -975,6 +1098,9 @@
       if (!a.task) { a.x = lerp(a.scatter.fx, a.scatter.tx, e); a.y = lerp(a.scatter.fy, a.scatter.ty, e); a.setMode(p > 0.6 ? 'cross' : 'arrow'); }
       if (p >= 1) { a.scatter = null; a.next = t + rand(0.2, 1.2); }
     });
+    var sy = window.scrollY, cut = sy - Math.max(40, vh * ABOVE);
+    // everything that scrolled above the view is finished at once (no animation), its agents are free again
+    sweepAbove(st, cut);
     if (t >= st.dispatchAt) {
       // video pacing: ~9.5 layers/s in the first part, ~7 on average
       var early = st.doneLayers < st.totalLayers * 0.3 ? 1.4 : 1;
@@ -982,17 +1108,19 @@
       // the visitor scrolled onto empty layers: start them right away (about 12 + 3 per empty layer per second)
       if (!st.touring && st.visManual > 0) rate = Math.max(rate, 12 + st.visManual * 3);
       st.tokens = Math.min(st.touring ? 2.5 : 3, st.tokens + rate * dt);
-      if (st.touring) dispatch(st, t); else dispatchFollow(st, t);
+      if (st.touring) st.dbg.dispatch(st, t); else dispatchFollow(st, t);
     }
-    var sy = window.scrollY;
     for (var i = st.active.length - 1; i >= 0; i--) {
-      var tk = st.active[i];
-      if (!st.touring && !tk.warp) {
-        // visitor scrolled away from this task: finish it quickly out of sight, the agent is needed in view
-        var bx = itemBox(tk.it);
-        if (bx.y + bx.h < sy - vh * 0.15 || bx.y > sy + vh * (1.25 + AHEAD)) tk.warp = 14;
+      var tk = st.active[i], bx = itemBox(tk.it);
+      if (bx.y + bx.h < cut) { st.aboveSkips++; abortTask(st, tk, null); }
+      else if (t - tk.wall0 > TASK_MAX) abortTask(st, tk, 'a task took longer than ' + TASK_MAX + ' s');
+      else {
+        // visitor scrolled far below this task: finish it quickly out of sight, the agent is needed in view
+        if (!st.touring && !tk.warp && bx.y > sy + vh * (1.25 + AHEAD)) tk.warp = 14;
+        st.cur = tk;
+        try { runTask(st, tk, t); } catch (err) { abortTask(st, tk, err); }
+        st.cur = null;
       }
-      runTask(st, tk, t);
       if (tk.finished) st.active.splice(i, 1);
     }
     trackSeen(st, t);
@@ -1004,33 +1132,28 @@
         s.tails.forEach(function (el) { revealEl(st, el, true); });
       }
     });
-    camera(st, t, dt, vw, vh);
+    if (st.touring) st.dbg.camera(st, t, dt, vw, vh);
     if (st.qHead >= st.queue.length && st.active.length === 0) enterDone(st, t);
   }
-
-  function dispatch(st, t) {
-    var idle = [];
-    for (var i = 0; i < st.agents.length; i++) { var a = st.agents[i]; if (a.active && !a.task && !a.scatter) idle.push(a); }
-    while (st.qHead < st.queue.length && st.queue[st.qHead].state === 'done') st.qHead++;
-    var looked = 0;
-    for (var k = st.qHead; k < st.queue.length && idle.length && looked < 14; k++) {
+  function sweepAbove(st, cut) {
+    if (cut <= 0) return;
+    for (var k = st.qHead; k < st.queue.length; k++) {
       var it = st.queue[k];
-      if (it.state !== 'pending') continue;
-      looked++;
-      if (!sectionOpen(st, it.section, t)) break;
-      if (!inWindow(st, it) || !depsOk(it)) continue;
-      if (it.type !== 'block') { if (st.tokens < 1) break; st.tokens -= 1; }
-      var best = 0, bd = 1e12;
-      for (var j = 0; j < idle.length; j++) {
-        var d = Math.pow(idle[j].x - (it.L ? it.L.x : it.g.master.R.x), 2) + Math.pow(idle[j].y - it.y, 2);
-        if (d < bd) { bd = d; best = j; }
+      if (it.state === 'done') continue;
+      var b = itemBox(it);
+      if (it.state === 'pending' && b.y + b.h < cut) { st.aboveSkips++; skipItem(st, it, true); continue; }
+      // clone group partly above: those copies are final at once, the rest keeps animating
+      if (it.type === 'clone' && b.y < cut) {
+        var ms = it.g.members, left = 0;
+        for (var mi = 0; mi < ms.length; mi++) { var m = ms[mi]; if (!m.done && m.R && m.R.y + m.R.h < cut) memberAbove(st, it, m); if (!m.done) left++; }
+        if (!left && it.state === 'pending') markItemDone(st, it);
       }
-      var ag = idle.splice(best, 1)[0];
-      startTask(st, it, ag, t, idle);
     }
+    for (var j = 0; j < st.tails.length; j++) { var tl = st.tails[j]; if (!tl.shown && tl.b < cut) { tl.shown = true; revealEl(st, tl.el, true); } }
+    for (var o = st.outs.length - 1; o >= 0; o--) if (st.outs[o].b < cut) { rm(st.outs[o].el); st.outs.splice(o, 1); }
   }
 
-  // ------------------------------------------- visitor-driven (scroll mode)
+  // ------------------------------------------- visitor-driven (scroll / fast)
   // Only layers in view and at most AHEAD viewport below it are built, never farther. Visible, unfinished layers
   // come first; layers below only once everything visible is under way. Scrolling onto unbuilt layers raises the
   // pace (more task starts, faster tasks), so nothing in view stays empty for long.
@@ -1104,20 +1227,19 @@
     growAgents(st, st.startAgents + Math.round((st.maxAgents - st.startAgents) * (st.nSections > 1 ? s / (st.nSections - 1) : 1)));
   }
   // finish an item without animation (only for items out of sight)
-  function skipItem(st, it) {
+  function skipItem(st, it, atOnce) {
     if (it.state === 'done') return;
     if (it.type === 'block') { it.L.needsBlock = false; }
     else if (it.type === 'build') {
       var L = it.L;
       if (L.ph) { L.ph.remove(); L.ph = null; }
-      if (L.sel) { L.sel.out(); L.sel = null; }
+      if (L.sel) { if (atOnce) L.sel.kill(); else L.sel.out(); L.sel = null; }
       L.blocked = false;
       revealEl(st, L.el, L.tree);
       L.state = 'done';
       countDone(st, 1, it.section);
     } else {
-      it.g.members.forEach(function (m) { revealEl(st, m.el, true); });
-      countDone(st, it.g.members.length * it.g.count, it.section);
+      it.g.members.forEach(function (m) { memberDone(st, it.g, m); });
     }
     markItemDone(st, it);
   }
@@ -1133,13 +1255,7 @@
       if (b.y + b.h > sy) return; // still something in view to build
       left.push(it);
     }
-    left.forEach(function (it) { skipItem(st, it); });
-  }
-  // "Tour" pressed again after the visitor scrolled: continue from here, finish what lies above out of sight
-  function resumeTour(st) {
-    var sy = window.scrollY;
-    st.queue.forEach(function (it) { if (it.state === 'pending') { var b = itemBox(it); if (b.y + b.h < sy) skipItem(st, it); } });
-    st.active.forEach(function (tk) { var b = itemBox(tk.it); if (b.y + b.h < sy) tk.warp = 14; });
+    left.forEach(function (it) { skipItem(st, it, true); });
   }
   // a clone group is under way as soon as its first item (or an inner group) is
   function groupStarted(g) {
@@ -1168,11 +1284,13 @@
   function markItemDone(st, it) {
     if (it.state === 'done') return;
     it.state = 'done';
+    progress(st);
     var s = st.sections[it.section];
     if (s) s.itemsDone++;
   }
   function countDone(st, n, section) {
     st.doneLayers = Math.min(st.totalLayers, st.doneLayers + n);
+    progress(st);
     var s = st.sections[section];
     if (s) s.done += n;
   }
@@ -1185,6 +1303,8 @@
 
   // ------------------------------------------------------------------ tasks
   function runTask(st, tk, t0) {
+    if (tk.faultThrow) throw new Error('injected fault in a task');
+    if (tk.faultStall) return; // never progresses: the task watchdog has to step in
     // task-local clock: runs faster (warp) when the visitor scrolled away from the task
     tk.clock = tk.clock == null ? t0 : tk.clock + (t0 - tk.lastT) * (tk.warp || 1);
     tk.lastT = t0;
@@ -1208,21 +1328,30 @@
     chain.forEach(function (x) {
       if (x && x.seen && x.seen.cat === 'manual' && x.seen.state === 'pending' && !x.waited) { x.waited = true; st.waits.push(t - x.seen.t); }
     });
-    it.state = 'active';
     var sp = st.speedBase * st.mult * (boost || 1);
-    var tk = { it: it, agent: a, pi: 0, pStarted: false, pt0: 0, sp: sp, mv: Math.pow(sp, 0.7), guide: null, helpers: [] };
+    var tk = { it: it, agent: a, pi: 0, pStarted: false, pt0: 0, sp: sp, mv: Math.pow(sp, 0.7), guide: null, helpers: [], bag: [], wall0: t };
+    try {
+      if (it.type === 'block') tk.phases = blockPhases(st, tk, it.L);
+      else if (it.type === 'clone') { tk.phases = clonePhases(st, tk, it.g, idle); }
+      else tk.phases = buildPhases(st, tk, it.L);
+    } catch (err) {
+      st.errors++; warn('a task could not start, showing that part', err);
+      tk.helpers.forEach(function (h) { h.task = null; });
+      skipItem(st, it, true);
+      return;
+    }
+    it.state = 'active';
+    it.task = tk;
     a.task = tk;
     a.scatter = null;
-    if (it.type === 'block') tk.phases = blockPhases(st, tk, it.L);
-    else if (it.type === 'clone') { tk.phases = clonePhases(st, tk, it.g, idle); }
-    else tk.phases = buildPhases(st, tk, it.L);
     st.active.push(tk);
     if (it.L) it.L.state = 'active';
+    progress(st);
   }
   function travel(st, tk, x, y, mode) {
     return {
       d: 0,
-      start: function (tk2) {
+      start: function () {
         var a = tk.agent;
         tk.fx = a.x; tk.fy = a.y;
         var dist = Math.hypot(x - a.x, y - a.y);
@@ -1260,9 +1389,9 @@
       d: 0,
       start: function () {
         revealEl(st, L.el, true);
-        if (tk.proxy) { tk.proxy.typer.end(); tk.proxy.el.remove(); }
-        if (tk.ph) tk.ph.remove();
-        if (tk.sel) tk.sel.out();
+        if (tk.proxy) { tk.proxy.kill(); tk.proxy = null; }
+        if (tk.ph) { tk.ph.remove(); tk.ph = null; }
+        if (tk.sel) { tk.sel.out(); tk.sel = null; }
         tk.guide = null;
         L.state = 'done';
         countDone(st, 1, L.section);
@@ -1302,7 +1431,8 @@
         d: 0.1 / tk.mv,
         start: function () {
           tk.sel = L.sel || new Sel(st); L.sel = null;
-          tk.sel.set(L.x, L.y, L.w, L.h); tk.guide = L; tk.ph = L.ph; L.ph = null;
+          tk.sel.set(L.x, L.y, L.w, L.h); tk.guide = L; tk.ph = L.ph || (k !== 'text' ? new Ph(st, k === 'media' || k === 'icon') : null); L.ph = null;
+          if (tk.ph) tk.ph.set(L.x, L.y, L.w, L.h);
           tk.agent.setMode('arrow');
         }
       });
@@ -1379,9 +1509,8 @@
           tk.dot.style.transform = 'translate3d(' + tk.agent.x + 'px,' + tk.agent.y + 'px,0)';
         },
         end: function () {
-          var ln = tk.line, dot = tk.dot;
-          ln.classList.add('sr-out'); dot.classList.add('sr-out');
-          setTimeout(function () { ln.remove(); dot.remove(); }, 520);
+          tk.line.classList.add('sr-out'); tk.dot.classList.add('sr-out');
+          fading(st, tk.line, L.y + L.h + 8, 520); fading(st, tk.dot, L.y + L.h + 8, 520);
         }
       });
       ph.push(settleText(st, tk, L));
@@ -1406,8 +1535,9 @@
     ];
   }
   function clonePhases(st, tk, g, idle) {
-    var M = g.master.R, members = g.members, n = members.length;
+    var M = g.master.R, members = g.members.filter(function (m) { return !m.done; }), n = members.length;
     var copies = [], sels = [], lines = [];
+    tk.cl = { members: members, copies: copies, sels: sels, lines: lines };
     var slideD = (0.42 + 0.05 * (n - 1)) / tk.mv;
     // helpers ride along with the copies
     while (tk.helpers.length < Math.min(3, n) && idle && idle.length) {
@@ -1431,6 +1561,7 @@
             var c = makeProxy(st, g.master.el, M, false);
             c.el.classList.add('sr-clone');
             copies.push(c);
+            if (m.done) rm(c.el);
             var ln = mk('div', 'sr-rline', st.world);
             var dx = m.R.x - M.x, dy = m.R.y - M.y, len = Math.hypot(dx, dy);
             var ys = M.y + M.h + 8;
@@ -1439,7 +1570,8 @@
             var lab = mk('span', 'sr-rlabel', st.world);
             lab.textContent = Math.round(len);
             lab.style.transform = 'translate3d(' + (m.R.x + m.R.w / 2) + 'px,' + (m.R.y + m.R.h + 8) + 'px,0) translate(-50%,-50%)';
-            lines.push(ln, lab);
+            lines.push([ln, lab]);
+            if (m.done) { rm(ln); rm(lab); }
           });
         }
       },
@@ -1449,6 +1581,7 @@
         tick: function (tk2, p) {
           var T = p * slideD * tk.mv;
           members.forEach(function (m, i) {
+            if (m.done) return;
             var q = clamp((T - i * 0.05) / 0.42, 0, 1), e = easeInOut(q);
             var x = lerp(M.x, m.R.x, e), y = lerp(M.y, m.R.y, e);
             var sx = lerp(1, m.R.w / M.w, e), sy = lerp(1, m.R.h / M.h, e);
@@ -1470,14 +1603,15 @@
           });
         },
         end: function () {
-          copies.forEach(function (c) { if (c.gh) c.gh.forEach(function (e) { e.remove(); }); c.el.style.filter = ''; });
-          lines.forEach(function (l) { l.classList.add('sr-out'); setTimeout(function () { l.remove(); }, 300); });
+          copies.forEach(function (c) { if (c.gh) c.gh.forEach(rm); c.el.style.filter = ''; });
+          var gy = itemBox(tk.it);
+          lines.forEach(function (pair) { pair.forEach(function (l) { l.classList.add('sr-out'); fading(st, l, gy.y + gy.h + 16, 300); }); });
         }
       },
       {
         d: 0.14 / tk.mv,
         start: function () {
-          members.forEach(function (m) { var s = new Sel(st); s.set(m.R.x, m.R.y, m.R.w, m.R.h); sels.push(s); });
+          members.forEach(function (m) { var s = null; if (!m.done) { s = new Sel(st); s.set(m.R.x, m.R.y, m.R.w, m.R.h); } sels.push(s); });
           tk.helpers.forEach(function (h) { release(st, h); });
           tk.helpers = [];
         }
@@ -1489,7 +1623,7 @@
           var T = p * rwTotal;
           members.forEach(function (m, i) {
             var r = rw[i], q = (T - r.s) / r.d;
-            if (q <= 0 || tk.mp[i] === 'done') return;
+            if (q <= 0 || tk.mp[i] === 'done' || m.done) return;
             if (!tk.mp[i]) {
               var mp = makeProxy(st, m.el, m.R, true);
               mp.imgs = mp.el.querySelectorAll('img,video,canvas,svg,picture');
@@ -1504,11 +1638,10 @@
             copies[i].el.style.opacity = String(clamp(1 - q * 2.5, 0, 1));
             tk.agent.x = m.R.x + m.R.w + 4; tk.agent.y = m.R.y + Math.min(m.R.h, 40) / 2;
             if (q >= 1) {
-              revealEl(st, m.el, true);
-              mpx.typer.end(); mpx.el.remove(); copies[i].el.remove();
-              sels[i].out();
+              mpx.kill(); rm(copies[i].el);
+              if (sels[i]) sels[i].out();
               tk.mp[i] = 'done';
-              countDone(st, g.count, g.section);
+              memberDone(st, g, m);
             }
           });
         },
@@ -1519,57 +1652,62 @@
       }
     ];
   }
-  // Complete a running task immediately (resize / skip).
+  // Complete a running task immediately: its part of the page becomes final.
   function completeTask(st, tk) {
     var it = tk.it;
     if (it.type === 'clone') {
-      it.g.members.forEach(function (m) { revealEl(st, m.el, true); });
+      it.g.members.forEach(function (m) { memberDone(st, it.g, m); });
     } else if (it.type === 'build') {
       revealEl(st, it.L.el, it.L.tree);
       it.L.state = 'done';
     } else if (it.type === 'block') {
-      it.L.blocked = true;
+      it.L.needsBlock = false; // the frame was not finished: its build task draws it from scratch
     }
     if (it.state !== 'done') {
-      if (it.type === 'clone') countDone(st, it.g.members.length * it.g.count, it.section);
-      else if (it.type === 'build') countDone(st, 1, it.section);
+      if (it.type === 'build') countDone(st, 1, it.section);
       markItemDone(st, it);
     }
     release(st, tk.agent);
     tk.helpers.forEach(function (h) { release(st, h); });
     tk.finished = true;
   }
+  // one copy of a clone group is final: shown, counted once
+  function memberDone(st, g, m) {
+    if (m.done) return;
+    m.done = true;
+    revealEl(st, m.el, true);
+    countDone(st, g.count, g.section);
+  }
+  // a member scrolled above the view: final at once; the copy flying to it (if any) is removed
+  function memberAbove(st, it, m) {
+    if (m.done) return;
+    memberDone(st, it.g, m);
+    st.aboveSkips++;
+    var tk = it.task, cl = tk && tk.cl, i = cl ? cl.members.indexOf(m) : -1;
+    if (i < 0) return;
+    if (cl.copies[i]) { rm(cl.copies[i].el); if (cl.copies[i].gh) cl.copies[i].gh.forEach(rm); }
+    if (cl.sels[i]) cl.sels[i].kill();
+    if (cl.lines[i]) cl.lines[i].forEach(rm);
+    if (tk.mp && tk.mp[i] && tk.mp[i] !== 'done') { tk.mp[i].kill(); tk.mp[i] = 'done'; }
+  }
+  // a failed, stuck or out-of-sight task: its part is shown in its final state, its overlay pieces removed
+  function abortTask(st, tk, why) {
+    if (why) { st.aborts++; warn('showing one part without animation: ' + (why.message || why), typeof why === 'object' ? why : ''); }
+    completeTask(st, tk);
+    (tk.bag || []).forEach(rm);
+    if (tk.sel) tk.sel.kill();
+    if (tk.ph) tk.ph.remove();
+    if (tk.proxy) rm(tk.proxy.el);
+    if (tk.cl) tk.cl.sels.forEach(function (s) { if (s) s.kill(); });
+    var L = tk.it.L;
+    if (L && tk.it.type === 'build') { if (L.ph) { L.ph.remove(); L.ph = null; } if (L.sel) { L.sel.kill(); L.sel = null; } }
+    if (tk.agent.task === tk) release(st, tk.agent);
+  }
 
   // ----------------------------------------------------------------- camera
   function maxScroll() {
     var se = document.scrollingElement || document.documentElement;
     return Math.max(0, se.scrollHeight - window.innerHeight);
-  }
-  function camera(st, t, dt, vw, vh) {
-    if (!st.touring) { st.camY = window.scrollY; st.camV = 0; return; }
-    var sp = st.speedBase * st.mult;
-    var lowest = -1e9, highest = 1e9;
-    st.active.forEach(function (tk) {
-      var it = tk.it;
-      lowest = Math.max(lowest, it.y + Math.min(it.h, vh * 0.45));
-      highest = Math.min(highest, it.y);
-    });
-    var next = null;
-    for (var k = st.qHead; k < st.queue.length; k++) { if (st.queue[k].state === 'pending') { next = st.queue[k]; break; } }
-    var F = lowest;
-    if (next) F = Math.max(F, next.y + Math.min(next.h, vh * 0.3));
-    var desired = F - vh * 0.74;
-    if (highest < 1e9) desired = Math.min(desired, highest - vh * 0.04);
-    if (!next && !st.active.length) desired = maxScroll();
-    desired = clamp(desired, 0, maxScroll());
-    if (Math.abs(window.scrollY - st.camY) > 3) st.camY = window.scrollY; // someone else scrolled
-    var diff = desired - st.camY;
-    var base = 0.09 * vh * sp;
-    var vt = diff <= 1 ? 0 : Math.min(diff * 3, base * (diff > vh * 0.32 ? 3 : 1));
-    st.camV = lerp(st.camV, vt, 1 - Math.exp(-dt * 2.6 * Math.max(1, Math.sqrt(sp))));
-    if (st.camV < 0.5 && vt === 0) st.camV = 0;
-    st.camY = clamp(st.camY + st.camV * dt, 0, maxScroll());
-    if (Math.round(st.camY) !== Math.round(window.scrollY)) window.scrollTo({ top: st.camY, left: window.scrollX, behavior: 'instant' });
   }
 
   // ---------------------------------------------------------------- agents
@@ -1657,24 +1795,6 @@
     }
   }
 
-  // ------------------------------------------------------------------- HUD
-  function updateHud(st, force) {
-    var n = st.activeAgents;
-    if (force || n !== st._a) { st.hudAgents.innerHTML = '<b>' + n + '</b><small> agents</small>'; st._a = n; }
-    var l = st.doneLayers + '/' + (st.totalLayers || 0);
-    if (force || l !== st._l) { st.hudLayers.innerHTML = '<b>' + st.doneLayers + '</b><small> / ' + (st.totalLayers || 0) + '</small><small> layers</small>'; st._l = l; }
-    var r = st.phase === 'done' ? 1 : st.totalLayers ? st.doneLayers / st.totalLayers : 0;
-    var w = r.toFixed(3);
-    if (w !== st._w) { st.hud.style.setProperty('--sr-p', w); st._w = w; } // bars scale with transforms only
-    var touringLabel = st.phase === 'scan' ? (st.touringShown && st.touring ? 'Touring' : 'Tour') : (st.touring ? 'Touring' : 'Tour');
-    if (force || touringLabel !== st._t) {
-      st.btnTour.textContent = touringLabel;
-      st.btnTour.classList.toggle('sr-on', touringLabel === 'Touring');
-      st.btnTour.setAttribute('aria-pressed', touringLabel === 'Touring' ? 'true' : 'false');
-      st._t = touringLabel;
-    }
-  }
-
   // ---------------------------------------------------------------- finale
   function enterDone(st, t) {
     st.phase = 'done';
@@ -1682,8 +1802,6 @@
     st.elapsed = t - st.buildStart;
     st.doneLayers = st.totalLayers;
     api._lastStats = fpsStats(st);
-    st.hud.setAttribute('data-state', 'done');
-    st.hudDone.innerHTML = 'Rebuilt by <b>' + st.activeAgents + '</b> agents in <b>' + st.elapsed.toFixed(1) + 's</b>';
     st.guides.forEach(function (g) { g.style.display = 'none'; });
     st.rulerTop.classList.remove('sr-on'); st.rulerLeft.classList.remove('sr-on');
     // every layer is revealed: drop all hiding -> DOM/CSS is the original again
@@ -1709,25 +1827,16 @@
       a.ringSlot = (i / Math.max(1, st.activeAgents)) * Math.PI * 2;
       a.sw = { fx: a.x, fy: a.y, ph: rand(0, 6.28) };
     });
-    var ax = st.o.autoExit != null ? st.o.autoExit : (st.o.mode === 'tour' ? null : 6);
-    if (ax != null) st.timers.push(setTimeout(function () { if (S === st) finishNow(st); }, ax * 1000));
-    updateHud(st, true);
-    placeHud(st, true);
+    var ax = st.o.autoExit != null ? st.o.autoExit : !st.dbg ? 3 : st.o.mode === 'tour' ? null : 6;
+    if (ax != null) st.timers.push(setTimeout(function () { if (S === st) finishNow(st, 'auto'); }, ax * 1000));
+    if (st.dbg) st.dbg.done(st, t);
     if (typeof st.o.onDone === 'function') { try { st.o.onDone({ elapsed: st.elapsed, layers: st.totalLayers, agents: st.activeAgents }); } catch (e) { /* ignore */ } }
   }
   function finaleStep(st, t, dt, vw, vh) {
-    if (st.touring) {
-      var ms = maxScroll();
-      if (Math.abs(window.scrollY - st.camY) > 3) { st.touring = false; updateHud(st, true); }
-      else if (st.camY < ms - 1) {
-        st.camY = lerp(st.camY, ms, 1 - Math.exp(-dt * 3));
-        window.scrollTo({ top: st.camY, left: window.scrollX, behavior: 'instant' });
-      }
-    }
-    var T = t - st.doneAt, R = st.ring, n = 0;
+    if (st.touring && st.dbg) st.dbg.finale(st, t, dt);
+    var T = t - st.doneAt, R = st.ring;
     st.agents.forEach(function (a) {
       if (!a.active) return;
-      n++;
       if (T < st.fin.swarm) {
         // stream towards the target, swirling
         var p = T / st.fin.swarm;
@@ -1749,70 +1858,52 @@
   }
 
   // ------------------------------------------------------- exit / replay
-  function finishNow(st) {
+  // Shows the finished page at once (no animation): every running task is completed, the overlay and the
+  // hiding styles are removed. Only visibility changes, so nothing moves (no layout shift).
+  function finishNow(st, why) {
     if (S !== st) return;
-    st.active.forEach(function (tk) { if (!tk.finished) completeTask(st, tk); });
-    teardown(st, true);
+    st.active.forEach(function (tk) { if (!tk.finished) { try { completeTask(st, tk); } catch (e) { /* teardown removes everything anyway */ } } });
+    teardown(st, true, why);
   }
-  function teardown(st, done) {
+  function teardown(st, done, why) {
     if (st.phase === 'build') api._lastStats = fpsStats(st);
+    api._lastExit = why || (done ? 'done' : 'stop');
     cancelAnimationFrame(st.raf);
     st.timers.forEach(clearTimeout);
     st.listeners.forEach(function (l) { l[0].removeEventListener(l[1], l[2], l[3]); });
     if (st.mo) st.mo.disconnect();
-    if (st.root) st.root.remove();
+    if (st.dbg) { try { st.dbg.teardown(st); } catch (e) { /* ignore */ } }
+    rm(st.root);
     removeStyles();
+    dmsStop();
     S = null;
     api.active = false;
-    if (done && st.phase !== 'done' && typeof st.o.onDone === 'function') { try { st.o.onDone({ skipped: true }); } catch (e) { /* ignore */ } }
+    if (done && st.phase !== 'done' && typeof st.o.onDone === 'function') { try { st.o.onDone({ skipped: true, reason: why }); } catch (e) { /* ignore */ } }
   }
   function replay(st) {
     var o = assign({}, st.o, { force: true });
-    teardown(st, false);
+    teardown(st, false, 'replay');
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     ensureHide();
+    dmsStart();
     run(o);
-  }
-  function onResize(st) {
-    if (st.layers.length) { measureGutter(st); autoCollapse(st); }
-    placeHud(st, true);
-    if (st.phase !== 'build' && st.phase !== 'scan') return;
-    // finish what is in flight, then re-measure what is still pending
-    st.active.forEach(function (tk) { if (!tk.finished) completeTask(st, tk); });
-    st.active = [];
-    st.world.querySelectorAll('.sr-sel,.sr-ph,.sr-rline,.sr-rlabel,.sr-bline,.sr-cghost,.sr-clone,.sr-sel-ghost').forEach(function (e) { e.remove(); });
-    var sx = window.scrollX, sy = window.scrollY;
-    st.layers.forEach(function (L) {
-      if (L.ph || L.sel) { L.ph = null; L.sel = null; L.blocked = false; L.needsBlock = false; }
-      if (L.state === 'done' || !L.el.isConnected) return;
-      var r = L.el.getBoundingClientRect();
-      L.x = r.left + sx; L.y = r.top + sy; L.w = r.width; L.h = r.height;
-      if (L.item) { L.item.y = L.y; L.item.h = L.h; }
-    });
-    st.queue.forEach(function (it) {
-      if (it.type === 'block' && it.state !== 'done') markItemDone(st, it);
-      if (it.type === 'clone') {
-        var r = it.g.master.el.getBoundingClientRect();
-        it.g.master.R = { x: r.left + sx, y: r.top + sy, w: r.width, h: r.height };
-        it.y = it.g.master.R.y;
-        it.g.members.forEach(function (m) { var q = m.el.getBoundingClientRect(); m.R = { x: q.left + sx, y: q.top + sy, w: q.width, h: q.height }; });
-      }
-    });
   }
 
   // ------------------------------------------------------------------ stats
   function snapshot(st) {
     var vh = window.innerHeight, ms = maxScroll();
     return {
-      phase: st.phase, mode: st.o.mode, touring: st.touring, speed: st.speedBase * st.mult,
+      phase: st.dead ? 'dead' : st.phase, mode: st.o.mode, debug: !!st.dbg, touring: st.touring, speed: st.speedBase * st.mult,
       layersDone: st.doneLayers, layersTotal: st.totalLayers, agents: st.activeAgents,
       activeTasks: st.active.length, t: now() - st.t0,
       buildT: st.buildStart ? now() - st.buildStart : 0,
       elapsed: st.elapsed || null, scrollProgress: ms ? window.scrollY / ms : 0, viewportHeights: ms / vh + 1,
       hud: st.hud ? st.hud.textContent : '',
-      controls: { position: st.pos, collapsed: !!st.collapsed, corner: st.corner || null },
+      controls: st.dbg ? { position: st.pos, collapsed: !!st.collapsed, corner: st.corner || null } : null,
       seen: st.seenStats, visiblePending: st.visPending || 0, maxAhead: +st.maxAhead.toFixed(3),
-      waits: st.waits.length ? { n: st.waits.length, avg: +(st.waits.reduce(function (x, y) { return x + y; }, 0) / st.waits.length).toFixed(3), max: +Math.max.apply(null, st.waits).toFixed(3) } : null
+      waits: st.waits.length ? { n: st.waits.length, avg: +(st.waits.reduce(function (x, y) { return x + y; }, 0) / st.waits.length).toFixed(3), max: +Math.max.apply(null, st.waits).toFixed(3) } : null,
+      aboveSkips: st.aboveSkips, aborts: st.aborts, errors: st.errors, holes: (st.holes || []).length,
+      fault: st.fault ? { kind: st.fault.kind, fired: st.fault.fired, task: st.fault.task || null } : null
     };
   }
   function fpsStats(st) {
@@ -1824,17 +1915,26 @@
     return { frames: f.length, avgFps: +(f.length / sum).toFixed(1), p95FrameMs: +(p95 * 1000).toFixed(1), agents: st.maxAgents };
   }
 
+  // what the debug add-on may use
+  var core = {
+    version: VERSION, api: api, AHEAD: AHEAD, ABOVE: ABOVE,
+    now: now, clamp: clamp, lerp: lerp, rand: rand, mk: mk, rm: rm, alphaOf: alphaOf, store: store, warn: warn,
+    state: function () { return S; }, finishNow: finishNow, replay: replay, skipItem: skipItem, startTask: startTask,
+    depsOk: depsOk, itemBox: itemBox, maxScroll: maxScroll, growAgents: growAgents, openSection: openSection, settled: settled
+  };
+
   window.SwarmRebuild = api;
 
-  // auto start: <script src="swarm-rebuild.js" data-auto data-mode="fast"></script>
-  var cur = document.currentScript;
-  if (cur && cur.hasAttribute('data-auto')) {
-    var ds = cur.dataset, opts = {};
+  // auto start: <script src="swarm-rebuild.js" data-auto data-mode="scroll"></script>
+  if (SCRIPT && SCRIPT.hasAttribute('data-auto')) {
+    var ds = SCRIPT.dataset, opts = {};
     if (ds.mode) opts.mode = ds.mode;
     if (ds.speed) opts.speed = parseFloat(ds.speed);
     if (ds.agents) opts.agents = parseInt(ds.agents, 10);
     if (ds.exclude) opts.exclude = ds.exclude;
     if (ds.controlsPosition) opts.controlsPosition = ds.controlsPosition;
+    if (ds.debug === '' || ds.debug === 'true') opts.debug = true;
+    if (ds.debugSrc) opts.debugSrc = ds.debugSrc;
     if (ds.once === 'false') opts.once = false;
     var go = function () { start(opts); };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
