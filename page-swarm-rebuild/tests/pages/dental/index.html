@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moonfield Dental Studio</title>
+<!-- Fictional test page for page-swarm-rebuild (light theme, small business, fixed mobile call button). -->
+<script>(function(d,w){w.__swarmRebuildSnippet=1;try{var q=new URLSearchParams(location.search).get('rebuild');if(q==='0')return;if(w.matchMedia&&w.matchMedia('(prefers-reduced-motion: reduce)').matches)return;if(q!=='1'&&sessionStorage.getItem('swarm-rebuild:seen'))return;var s=d.createElement('style');s.id='swarm-rebuild-hide';s.textContent='@layer swarm-rebuild{body *{visibility:hidden!important}}';d.head.appendChild(s);setTimeout(function(){var r=w.SwarmRebuild;if(!(r&&r.active)){var e=d.getElementById('swarm-rebuild-hide');if(e)e.remove()}},5000)}catch(e){}})(document,window);</script>
+<link rel="stylesheet" href="../../../assets/swarm-rebuild.css">
+<style>
+  :root { --ink: #17302d; --muted: #5b6f6c; --teal: #2f7f77; --teal-soft: #e3f2f0; --line: #d8e4e2; --bg: #fbfdfc; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: auto; }
+  body { margin: 0; font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--bg); }
+  a { color: var(--teal); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  header { border-bottom: 1px solid var(--line); background: #fff; }
+  header .wrap { display: flex; align-items: center; justify-content: space-between; height: 76px; gap: 24px; }
+  .logo { font-weight: 700; font-size: 20px; color: var(--ink); text-decoration: none; }
+  .logo span { color: var(--teal); }
+  nav ul { display: flex; gap: 22px; list-style: none; margin: 0; padding: 0; }
+  nav a { text-decoration: none; color: var(--muted); font-size: 15px; }
+  .btn { display: inline-block; padding: 12px 22px; border-radius: 999px; background: var(--teal); color: #fff; text-decoration: none; font-weight: 600; font-size: 15px; }
+  .btn-ghost { background: transparent; color: var(--teal); border: 2px solid var(--teal); padding: 10px 20px; }
+  section { padding: 88px 0; }
+  section + section { border-top: 1px solid var(--line); }
+  h1 { font-size: 52px; line-height: 1.1; margin: 0 0 20px; letter-spacing: -0.02em; }
+  h2 { font-size: 36px; line-height: 1.2; margin: 0 0 16px; }
+  h3 { font-size: 20px; margin: 0 0 8px; }
+  .eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: 13px; color: var(--teal); font-weight: 700; margin: 0 0 12px; }
+  .lead { font-size: 19px; color: var(--muted); max-width: 560px; }
+  .hero .wrap { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: center; }
+  .hero img { width: 100%; height: auto; border-radius: 20px; display: block; }
+  .hero .actions { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 28px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 36px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 28px; }
+  .card .ic { width: 44px; height: 44px; border-radius: 12px; background: var(--teal-soft); color: var(--teal); display: grid; place-items: center; font-weight: 700; margin-bottom: 16px; }
+  .card p { color: var(--muted); margin: 0; font-size: 16px; }
+  .price { font-weight: 700; color: var(--ink); margin-top: 12px; display: block; }
+  .team img { width: 100%; height: auto; border-radius: 14px; display: block; margin-bottom: 14px; }
+  .team .role { color: var(--muted); font-size: 15px; }
+  .quote { font-size: 18px; }
+  .quote cite { display: block; margin-top: 12px; color: var(--muted); font-style: normal; font-size: 15px; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
+  .clinic img { width: 100%; height: auto; border-radius: 16px; display: block; }
+  table { width: 100%; border-collapse: collapse; font-size: 16px; }
+  td { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  td:last-child { text-align: right; color: var(--muted); }
+  details { border-bottom: 1px solid var(--line); padding: 16px 0; }
+  summary { cursor: pointer; font-weight: 600; }
+  details p { color: var(--muted); margin: 10px 0 0; }
+  .contact-list { list-style: none; padding: 0; margin: 0; }
+  .contact-list li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  form label { display: block; font-size: 14px; color: var(--muted); margin: 14px 0 6px; }
+  form input, form select { width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+  form .btn { margin-top: 20px; border: 0; cursor: pointer; }
+  footer { padding: 40px 0 120px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); }
+  footer .wrap { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  .call-fab { display: none; }
+  @media (max-width: 759px) {
+    body { font-size: 16px; }
+    nav { display: none; }
+    header .btn { display: none; }
+    h1 { font-size: 36px; }
+    h2 { font-size: 28px; }
+    section { padding: 56px 0; }
+    .hero .wrap, .split, .grid3 { grid-template-columns: 1fr; }
+    .call-fab { display: flex; position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 50; gap: 10px; }
+    .call-fab a { flex: 1; text-align: center; padding: 14px 10px; border-radius: 999px; font-weight: 700; text-decoration: none; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+    .call-fab .call { background: var(--teal); color: #fff; }
+    .call-fab .book { background: #fff; color: var(--teal); border: 2px solid var(--teal); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <a class="logo" href="#top">Moonfield <span>Dental</span></a>
+    <nav aria-label="Main">
+      <ul>
+        <li><a href="#services">Services</a></li>
+        <li><a href="#team">Team</a></li>
+        <li><a href="#prices">Prices</a></li>
+        <li><a href="#faq">FAQ</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ul>
+    </nav>
+    <a class="btn" href="#booking">Book an appointment</a>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap">
+      <div>
+        <p class="eyebrow">Family dentistry since 2009</p>
+        <h1>Calm, careful dental care for the whole family</h1>
+        <p class="lead">Check-ups, cleaning, fillings and gentle treatment for anxious patients. Same-week appointments, clear prices, no surprises.</p>
+        <div class="actions">
+          <a class="btn" href="#booking">Book an appointment</a>
+          <a class="btn btn-ghost" href="tel:+15550100200">Call +1 555 0100 200</a>
+        </div>
+      </div>
+      <img src="img/hero.svg" width="640" height="480" alt="Illustration of a clean white tooth">
+    </div>
+  </section>
+
+  <section id="services">
+    <div class="wrap">
+      <p class="eyebrow">Services</p>
+      <h2>Everything your smile needs, in one place</h2>
+      <p class="lead">From the first check-up to a complete smile makeover, we explain every step before we start.</p>
+      <div class="grid3">
+        <article class="card"><div class="ic">01</div><h3>Check-up &amp; cleaning</h3><p>A full examination, X-rays when needed and a professional clean in one visit.</p><span class="price">from $85</span></article>
+        <article class="card"><div class="ic">02</div><h3>Fillings</h3><p>Tooth-coloured fillings that match your natural teeth and last for years.</p><span class="price">from $120</span></article>
+        <article class="card"><div class="ic">03</div><h3>Whitening</h3><p>In-chair or take-home whitening, planned around your sensitivity.</p><span class="price">from $290</span></article>
+        <article class="card"><div class="ic">04</div><h3>Children's dentistry</h3><p>Short, friendly visits that make children look forward to the next one.</p><span class="price">from $60</span></article>
+        <article class="card"><div class="ic">05</div><h3>Implants</h3><p>Permanent replacement for missing teeth, with a written treatment plan.</p><span class="price">from $1,450</span></article>
+        <article class="card"><div class="ic">06</div><h3>Emergency care</h3><p>Toothache or a broken tooth? We keep slots free every day for emergencies.</p><span class="price">from $95</span></article>
+      </div>
+    </div>
+  </section>
+
+  <section id="team" class="team">
+    <div class="wrap">
+      <p class="eyebrow">Our team</p>
+      <h2>Friendly faces, steady hands</h2>
+      <div class="grid3">
+        <div><img src="img/team1.svg" width="300" height="300" alt="Portrait placeholder"><h3>Dr. Mira Okafor</h3><p class="role">Lead dentist, implants</p></div>
+        <div><img src="img/team2.svg" width="300" height="300" alt="Portrait placeholder"><h3>Dr. Tomas Vey</h3><p class="role">Family and children's dentistry</p></div>
+        <div><img src="img/team3.svg" width="300" height="300" alt="Portrait placeholder"><h3>Lena Brandt</h3><p class="role">Dental hygienist</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="reviews">
+    <div class="wrap">
+      <p class="eyebrow">Patients say</p>
+      <h2>Rated 4.9 by 600+ patients</h2>
+      <div class="grid3">
+        <blockquote class="card quote">"I used to dread the dentist. Here they explained everything and I felt no pain at all."<cite>Anna, patient since 2019</cite></blockquote>
+        <blockquote class="card quote">"Booked on Monday, treated on Wednesday. The price was exactly what they quoted."<cite>Peter, patient since 2021</cite></blockquote>
+        <blockquote class="card quote">"My kids actually like going. That says it all."<cite>Julia, patient since 2016</cite></blockquote>
+      </div>
+    </div>
+  </section>
+
+  <section id="prices" class="clinic">
+    <div class="wrap split">
+      <div>
+        <p class="eyebrow">Prices</p>
+        <h2>Clear prices before every treatment</h2>
+        <table>
+          <tr><td>First visit and consultation</td><td>$65</td></tr>
+          <tr><td>Check-up and cleaning</td><td>$85</td></tr>
+          <tr><td>Tooth-coloured filling</td><td>$120</td></tr>
+          <tr><td>Root canal treatment</td><td>$480</td></tr>
+          <tr><td>Crown</td><td>$690</td></tr>
+          <tr><td>Implant with crown</td><td>$1,450</td></tr>
+        </table>
+      </div>
+      <img src="img/clinic.svg" width="800" height="420" alt="Illustration of the clinic building">
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <p class="eyebrow">Questions</p>
+      <h2>Frequently asked questions</h2>
+      <details><summary>Do you accept new patients?</summary><p>Yes. New patients can usually be seen within the same week.</p></details>
+      <details><summary>Can I come in for an emergency?</summary><p>Call us in the morning and we will find a slot the same day.</p></details>
+      <details><summary>Is treatment painful?</summary><p>We use modern local anaesthesia and take breaks whenever you need one.</p></details>
+      <details><summary>How can I pay?</summary><p>Card, cash or bank transfer. Larger treatments can be paid in instalments.</p></details>
+      <details><summary>Where can I park?</summary><p>There are free parking spaces in the courtyard behind the clinic.</p></details>
+    </div>
+  </section>
+
+  <section id="contact">
+    <div class="wrap split">
+      <div>
+        <p class="eyebrow">Contact</p>
+        <h2>Visit us</h2>
+        <ul class="contact-list">
+          <li>Phone: <a href="tel:+15550100200">+1 555 0100 200</a></li>
+          <li>Email: <a href="mailto:hello@moonfield-dental.example">hello@moonfield-dental.example</a></li>
+          <li>Address: 12 Example Lane, Springfield</li>
+          <li>Mon-Fri 8:00-18:00, Sat 9:00-13:00</li>
+        </ul>
+      </div>
+      <form id="booking" onsubmit="return false">
+        <h3>Book an appointment</h3>
+        <label for="f-name">Name</label>
+        <input id="f-name" name="name" autocomplete="name">
+        <label for="f-phone">Phone</label>
+        <input id="f-phone" name="phone" type="tel" autocomplete="tel">
+        <label for="f-type">Treatment</label>
+        <select id="f-type" name="type"><option>Check-up</option><option>Cleaning</option><option>Emergency</option></select>
+        <button class="btn" type="submit">Request appointment</button>
+      </form>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Moonfield Dental Studio (fictional test page)</span>
+    <span><a href="#top">Back to top</a></span>
+  </div>
+</footer>
+
+<div class="call-fab">
+  <a class="call" href="tel:+15550100200">Call us</a>
+  <a class="book" href="#booking">Book an appointment</a>
+</div>
+
+<script src="../../../assets/swarm-rebuild.js" data-auto data-mode="scroll"></script>
+</body>
+</html>

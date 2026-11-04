@@ -1,0 +1,10 @@
+node_modules/
+.next/
+swarm-check/
+**/tests/out/
+**/tests/pages/nextjs/components/
+*.mp4
+*.webm
+dbg*.cjs
+dbg*.js
+.DS_Store

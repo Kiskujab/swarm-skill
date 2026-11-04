@@ -1,0 +1,15 @@
+{
+  "name": "swarm-rebuild-next-test",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Fictional Next.js 15 test app for page-swarm-rebuild. Dependencies are installed by scripts/run-tests.cjs in a temporary copy.",
+  "scripts": {
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "15.5.29",
+    "react": "19.2.9",
+    "react-dom": "19.2.9"
+  }
+}
