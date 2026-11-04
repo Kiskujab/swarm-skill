@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.2.0 — 2026-11-04 — more natural motion
+
+Module (`assets/`)
+- **Swarms instead of a perfect circle.** Free agents (opening, waiting for work, finale) are moved by damped springs
+  towards places in 2–4 swarms of clearly different sizes (phones: 2). The swarm centres circle an ellipse around a
+  **focus element** whose radius breathes and whose pace changes, so agents speed up and slow down by themselves. The
+  opening starts in swarms already (it is well under a second for visitors). Idle swarms during the build glide between
+  spots in view and settle there (resting agents cost no repaint).
+- **Focus element:** new option `focus` (selector or element; also `data-focus`, `[data-swarm-focus]`). Per phase the
+  first one at least half in view is used, then `h1`, a main button, the logo, the largest picture, a spot in view. The
+  skill now asks the developer for it (SKILL.md step 1). The demo uses `#reel` ("Make it feel real"), the dental page
+  `#booking .btn` (via `data-focus`), the Next.js page the automatic choice.
+- **Finale:** a stiff, under-damped spring (damping 0.63) pulls the agents to the focus: fastest at the start, measured
+  overshoot 8–17 % of the way, then back; after ~1 s the swarms circle slowly. Replaces the ring.
+- **Mouse** (opening and finale, desktop only, never on touch / phones / reduced motion): agents near the pointer move
+  out of its way; up to 3 curious ones follow it on a small circle for 1.3–2 s, shorter the faster it moves away; never
+  closer than 36 px. Measured: 1.4–1.5 s when the pointer leaves at 120 px/s, 0.9–1.1 s at 1300 px/s; closest 36 px.
+- **Gravity:** the way to a task (and a carried clone copy) bends downwards with the weight of the element
+  (sqrt(area) / 320 px, 0.2..1) and the square of the horizontal share: sag 0.2 x horizontal distance x weight x
+  horizontality², max 56 px. Vertical moves stay straight. The way to a task starts with the agent's current velocity
+  (cubic Hermite curve), so no sudden stops.
+- **Difficulty:** each task's work is scaled by a difficulty from its area (typing: the box): 2x area ~1.6–1.8x near
+  the page average, squashed so the hardest is at most 4x the easiest, normalised (weighted by task length and
+  difficulty, because parallel tasks make the long ones set the pace) so the build time stays the same. A plain average
+  made the 6x tour 9 % slower (9.2 -> 10.0 s); the weighted one keeps it at 9.2 s. Typing time now depends on the box,
+  not the letter count (its page average is kept).
+- **Scroll keys scroll:** Space, arrows, Page Up / Down, Home / End (focus on the page, no Ctrl / Alt / Meta) drive the
+  build like the wheel; Tab, Enter, Esc and all other keys still end the effect (keyboard users reach the content at
+  once). In the debug tour, a scroll key hands over to the visitor like the wheel.
+- **Lite:** phones get 2 swarms, no mouse play and a simpler wobble; when the frame rate stays below 38 fps for two
+  seconds, also one trail ghost instead of three (`motion.lite`).
+- New option `motion` (`swarms`, `mouse`, `arc`, `difficulty`, `spring`, `lite`); debug parameters
+  `?rebuild-motion=key:value,...` and `?rebuild-focus=`; debug hook `SwarmRebuild._motion()`; `state()` reports
+  `focus`, `swarms`, `lite`, `mouseOn`, `mouse`, `diff`.
+- Version 1.1.0 -> 1.2.0.
+
+Tests and tools
+- verify.cjs: new check group `motion` (in `all`): opening swarms around the focus with changing speed and no perfect
+  circle; finale overshoot, early top speed, slow end; mouse dodge / follow / distance / no exit (desktop) or lite (touch);
+  gravity sag horizontal vs vertical and heavy vs light; difficulty (rank correlation, big/small ratio, max 4x);
+  contact sheets `sheet-opening.jpg` and `sheet-finale.jpg`. `product`: scroll keys drive the build; Enter and Ctrl+arrow
+  end it.
+- bench-fps.cjs: compares 1.1+ versions with the same parameters, serves the old debug add-on, reports build time.
+- run-tests.cjs: motion summary lines; longer time limit for the long runs.
+- tests/index.html: a "motion extras off (compare)" link per page.
+
+MEASUREMENTS
+
 ## 1.1.0 — 2026-11-04 — product behaviour, protection, test pages online
 
 Module (`assets/`)

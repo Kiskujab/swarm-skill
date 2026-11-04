@@ -1890,9 +1890,10 @@
     a.keep = rand(44, 60); a.mdir = Math.random() < 0.5 ? -1 : 1; a.mcool = 0; a.mf = null;
   }
   // the agent's place in its swarm
-  function slot(a, t) {
-    var s = a.swarm, ang = a.oA + t * a.oW;
-    return [s.x + Math.cos(ang) * a.oR + Math.sin(t * 1.7 + a.wob) * 5, s.y + Math.sin(ang) * a.oR * 0.8 + Math.cos(t * 1.3 + a.wob) * 4];
+  // (calm: while waiting for work the swarm settles where it is, so resting agents need no repaint)
+  function slot(a, t, calm) {
+    var s = a.swarm, ang = a.oA + (calm ? 0 : t * a.oW), wb = calm ? 0 : 1;
+    return [s.x + Math.cos(ang) * a.oR + Math.sin(t * 1.7 + a.wob) * 5 * wb, s.y + Math.sin(ang) * a.oR * 0.8 + Math.cos(t * 1.3 + a.wob) * 4 * wb];
   }
   // swarms circling an orbit (an ellipse around the focus element) at their own, varying pace and distance
   function orbitSwarms(st, O, t, dt, w) {
@@ -1934,8 +1935,9 @@
   function idleStep(st, a, t, dt, vw, vh) {
     var sy = window.scrollY;
     if (a.y < sy - vh * 1.5 || a.y > sy + vh * 2.5) { a.y = a.py = a.y < sy ? sy - 30 : sy + vh + 30; a.vy *= 0.3; a.hist.length = 0; }
-    var p = slot(a, t);
+    var p = slot(a, t, true);
     freeStep(st, a, t, dt, p[0], p[1], 3.6 * a.kf, 0.8, 1500);
+    if (Math.abs(a.vx) + Math.abs(a.vy) < 4 && Math.abs(p[0] - a.x) + Math.abs(p[1] - a.y) < 1) { a.vx = a.vy = 0; a.x = p[0]; a.y = p[1]; } // at rest
     a.setMode('arrow');
   }
   function freeStep(st, a, t, dt, tx, ty, w, z, vmax) {
@@ -2074,8 +2076,10 @@
       if (a.mode === 'arrow' && spd > 7) target = Math.atan2(my, mx) + Math.PI * 0.75;
       a.ang += shortAngle(target - a.ang) * Math.min(1, dt * 12);
       if (a.mode !== 'arrow') a.ang = 0;
-      a.el.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0) rotate(' + a.ang.toFixed(3) + 'rad)';
-      var show = spd > 14;
+      var tr = 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0) rotate(' + a.ang.toFixed(3) + 'rad)';
+      if (tr !== a.tr) { a.el.style.transform = tr; a.tr = tr; } // resting agents: no style write, no repaint
+      // motion trails only for agents at work (and in the opening / finale): idle swarms glide without them
+      var show = spd > 14 && (st.phase !== 'build' || !!a.task);
       for (var k = 0; k < 3; k++) {
         var g = a.ghosts[k], idx = (k + 1) * 4;
         if (show && k < gn && hh.length > idx + 1) {

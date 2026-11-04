@@ -100,7 +100,7 @@ function verify(name, url, device, label, checks, extra) {
   fs.rmSync(path.join(out, 'frames'), { recursive: true, force: true });
   const mode = label === 'tour6' ? 'tour' : label;
   const long = checks.indexOf('all') >= 0 || checks.indexOf('manual') >= 0;
-  const argv = [path.join(__dirname, 'verify.cjs'), '--url', url, '--mode', mode, '--device', device, '--checks', checks, '--out', out, '--min-fps', String(MIN_FPS), '--timeout', long ? '660' : '300']
+  const argv = [path.join(__dirname, 'verify.cjs'), '--url', url, '--mode', mode, '--device', device, '--checks', checks, '--out', out, '--min-fps', String(MIN_FPS), '--timeout', long ? '900' : '300']
     .concat(label === 'tour6' ? ['--speed', '6'] : []).concat(extra || []);
   console.log('\n=== ' + name + ' / ' + device + ' / ' + label + ' (' + checks + ')');
   fs.rmSync(path.join(out, 'report.json'), { force: true });
@@ -108,7 +108,7 @@ function verify(name, url, device, label, checks, extra) {
   return new Promise((resolve) => {
     const c = spawn(process.execPath, argv, { stdio: 'inherit', detached: true });
     children.add(c);
-    const kill = setTimeout(() => { try { process.kill(-c.pid, 'SIGKILL'); } catch (e) { /* gone */ } }, long ? 720000 : 360000);
+    const kill = setTimeout(() => { try { process.kill(-c.pid, 'SIGKILL'); } catch (e) { /* gone */ } }, long ? 960000 : 360000);
     c.on('exit', (code) => {
       clearTimeout(kill);
       children.delete(c);
