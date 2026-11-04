@@ -205,7 +205,7 @@ Compare with earlier numbers from the same machine (`scripts/bench-fps.cjs` comp
 ```bash
 node scripts/run-tests.cjs            # demo + dental + nextjs, desktop + mobile (~35 min, needs npm access for Next.js)
 node scripts/run-tests.cjs --quick --pages demo,dental --devices desktop
-node scripts/bench-fps.cjs --old-ref v1.0.1   # fps of an older tag against the working copy
+node scripts/bench-fps.cjs --old-ref c332016   # fps of an older version (c332016 = 1.0.1) against the working copy
 ```
 Reference numbers on the demo, desktop 1440x900 (the developer's own machine, Nov 2026, module 1.0.0): fast (now
 `tour` at speed 6) 8.9 s / 59 fps / CLS 0.0007; tour 43.2 s, 27 agents / 59.6 fps / CLS 0.0021, scroll progress at

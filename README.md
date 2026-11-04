@@ -60,7 +60,7 @@ ffmpeg (contact sheets) and npm access (the Next.js test app installs its depend
 cd page-swarm-rebuild
 node scripts/run-tests.cjs                 # demo + dental + Next.js, desktop + mobile, ~35 min
 node scripts/run-tests.cjs --quick         # without the 45 s tour run and the demo fast run
-node scripts/bench-fps.cjs --old-ref v1.0.1   # frame rate: an older tag against the working copy
+node scripts/bench-fps.cjs --old-ref c332016   # frame rate: 1.0.1 (commit c332016) against the working copy
 ```
 
 Results go to the system temp folder (`page-swarm-rebuild-check/summary.md`); nothing is written into the repo.

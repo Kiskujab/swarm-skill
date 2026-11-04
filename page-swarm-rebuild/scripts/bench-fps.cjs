@@ -3,7 +3,7 @@
  * bench-fps.cjs — frame rate of an older module version against the current one, on the same machine,
  * runs interleaved (old, new, old, new ...) so that machine load affects both alike.
  *
- *   node scripts/bench-fps.cjs [--old-ref v1.0.1 | --old <path to an old swarm-rebuild.js>]
+ *   node scripts/bench-fps.cjs [--old-ref c332016 | --old <path to an old swarm-rebuild.js>]
  *                              [--pages demo,dental] [--devices desktop,mobile] [--modes tour,tour6,scroll,fast]
  *                              [--reps 3] [--timeout 1800]
  *
@@ -15,7 +15,7 @@
  * Visitor modes are driven by mouse-wheel steps (0.35 viewport every 0.5 s). The module's own frame
  * statistics (frames during the build) are used; no screenshots are taken.
  *
- * The old version is read from git (--old-ref, default v1.0.1) or from a file (--old, with its .css next to it).
+ * The old version is read from git (--old-ref: a commit or tag, default c332016 = 1.0.1) or from a file (--old, with its .css next to it).
  * Results: a table on stdout and <os tmp>/page-swarm-rebuild-bench/bench.json.
  */
 'use strict';
@@ -51,7 +51,7 @@ if (args.old) {
   oldJs = fs.readFileSync(path.resolve(String(args.old)), 'utf8');
   oldCss = fs.readFileSync(path.resolve(String(args.old)).replace(/\.js$/, '.css'), 'utf8');
 } else {
-  const ref = String(args['old-ref'] || 'v1.0.1');
+  const ref = String(args['old-ref'] || 'c332016') // c332016 = module 1.0.1;
   const git = (f) => execFileSync('git', ['show', ref + ':page-swarm-rebuild/assets/' + f], { cwd: SKILL, encoding: 'utf8', maxBuffer: 1 << 24 });
   oldJs = git('swarm-rebuild.js'); oldCss = git('swarm-rebuild.css');
 }
