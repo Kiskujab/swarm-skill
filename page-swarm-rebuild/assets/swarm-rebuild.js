@@ -1,5 +1,5 @@
 /*!
- * swarm-rebuild v1.0.0
+ * swarm-rebuild v1.0.1
  * "The page rebuilds itself": a swarm of agent cursors re-creates an existing
  * page layer by layer (frames, typing, image reveals, clone-and-rewrite),
  * with an auto-scrolling tour and a small control bar.
@@ -17,7 +17,7 @@
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   if (window.SwarmRebuild && window.SwarmRebuild.version) return;
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
   var LAYER = 'swarm-rebuild';
   var HIDE_ID = 'swarm-rebuild-hide';
   var REVEAL_ID = 'swarm-rebuild-reveal';
@@ -725,6 +725,9 @@
           if (it.R.h > vh * 0.9) return;
           if (it.R.w > vw * 0.85 && it.R.h > vh * 0.35) return;          // page bands are never clone groups
           try { if (it.el.matches(o.sectionSelector)) return; } catch (e) { /* ignore */ }
+          // a row holding a phone link (or another instant / excluded element) is never a clone: it is walked,
+          // so that element is shown at once instead of waiting for the clone animation
+          try { if ((inSel && it.el.querySelector(inSel)) || (exSel && it.el.querySelector(exSel))) return; } catch (e) { /* ignore */ }
           var sig = it.el.localName + '|' + (it.el.getAttribute('class') || '') + '|' + it.el.childElementCount;
           (bySig[sig] = bySig[sig] || []).push(it);
         });
