@@ -101,7 +101,7 @@ const SAMPLES = {
     if (name === 'html') {
       const idx = fs.readFileSync(path.join(dir, 'index.html'), 'utf8'), sub = fs.readFileSync(path.join(dir, 'rolunk/index.html'), 'utf8');
       check('html: snippet after <meta charset>, stylesheet and script tag with the focus (relative paths per page)',
-        idx.indexOf('swarm-rebuild-hide') > idx.indexOf('charset') && /href="swarm-rebuild\/swarm-rebuild.css"/.test(idx) && /src="swarm-rebuild\/swarm-rebuild.js" data-auto data-focus=".btn"/.test(idx) && /src="..\/swarm-rebuild\/swarm-rebuild.js"/.test(sub));
+        idx.indexOf('swarm-rebuild-hide') > idx.indexOf('charset') && /href="swarm-rebuild\/swarm-rebuild(\.min)?.css"/.test(idx) && /src="swarm-rebuild\/swarm-rebuild(\.min)?.js" data-auto data-focus=".btn"/.test(idx) && /src="..\/swarm-rebuild\/swarm-rebuild(\.min)?.js"/.test(sub));
     }
     const again = tool(dir, 'install');
     check(name + ': a second install is refused (no double insertion)', again.code !== 0, again.out.trim().split('\n')[0]);

@@ -29,12 +29,16 @@
  *   text     typing in any language: every frame of a visitor run, the typed part of every text ends on a character
  *            boundary (grapheme cluster: accents, emoji ZWJ sequences, flags, Arabic marks, CJK), and the caret sits
  *            after the last typed character in its writing direction (left of it in Arabic / Hebrew)
+ *   a11y     search engines and accessibility: a search-engine crawler (Googlebot, Bingbot) gets the finished page at
+ *            once (no hiding, DOM identical); during the build the overlay is aria-hidden with nothing focusable in it,
+ *            screen readers get a short status message in the page's language, the first Tab ends the effect and
+ *            focus lands where it would without the effect; the message is gone afterwards
  *   motion   the motion (debug add-on measurements): opening swarms around the focus element with changing speed,
  *            the finale's spring-like pull (overshoot) and slow circling, mouse play (dodge, follow shorter when the
  *            pointer leaves faster, never closer than 36 px, desktop only), gravity sag of horizontal moves (none for
  *            vertical ones), task difficulty (bigger = longer, at most ~4x); contact sheets of the opening and finale
  *   manual   the visitor takes over: a debug tour interrupted by wheel scrolling, then a scroll-mode run
- *   all      record,extra,product,protect,fixed,visible,text,motion
+ *   all      record,extra,product,protect,fixed,visible,text,a11y,motion
  *
  * --consent  the accept button of a cookie / consent banner (also one a script adds later): clicked during the build,
  *            it must work at the first click (the banner goes away) and the effect ends
@@ -83,7 +87,7 @@ const MOBILE = args.device === 'mobile';
 const [VW, VH] = String(args.viewport || (MOBILE ? '390x844' : '1440x900')).split('x').map(Number);
 const FPS = Number(args.fps || 10);
 const CHECKS = new Set(String(args.checks || 'all').split(','));
-if (CHECKS.has('all')) ['record', 'extra', 'product', 'protect', 'fixed', 'visible', 'text', 'motion'].forEach((c) => CHECKS.add(c));
+if (CHECKS.has('all')) ['record', 'extra', 'product', 'protect', 'fixed', 'visible', 'text', 'a11y', 'motion'].forEach((c) => CHECKS.add(c));
 const TIMEOUT_S = Number(args.timeout || 400);
 const MIN_FPS = Number(args['min-fps'] || 50);
 fs.mkdirSync(path.join(OUT, 'frames'), { recursive: true });
@@ -941,6 +945,54 @@ function fixedTargets() {
     const g = await page.evaluate(gone);
     check('text: run ends with the original DOM, no layout shift, no errors', isFinished(g, baseDom) && g.cls < 0.01 && !bag.length && !bag.fallbacks.length, 'CLS ' + (g.cls || 0).toFixed(4) + ' ' + (bag.concat(bag.fallbacks)).slice(0, 3).join(' | '));
     await ctx.close();
+  }
+
+  if (CHECKS.has('a11y')) {
+    report.a11y = {};
+    // ---------- search engines render with JavaScript: they must get the finished page
+    for (const [bot, ua] of [['Googlebot', 'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.204 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'], ['Bingbot', 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm) Chrome/131.0.0.0 Safari/537.36']]) {
+      const ctx = await newCtx({ userAgent: ua });
+      const page = await ctx.newPage();
+      await page.goto(args.url, { waitUntil: 'load' });
+      await page.waitForTimeout(500);
+      const x = await page.evaluate(() => ({ hide: !!document.getElementById('swarm-rebuild-hide'), root: !!document.getElementById('swarm-rebuild-root'), dom: document.body.outerHTML, vis: Array.from(document.body.querySelectorAll('*')).map((e) => getComputedStyle(e).visibility.charAt(0)).join(''), st: window.SwarmRebuild ? window.SwarmRebuild.state().phase : 'none' }));
+      const wrong = [...x.vis].filter((c, k) => c !== baseVis[k]).length;
+      check('seo: ' + bot + ' gets the finished page at once (nothing hidden, DOM identical)', !x.hide && !x.root && domSame(x.dom, baseDom) && wrong === 0, 'hiding style ' + x.hide + ', overlay ' + x.root + ', elements with another visibility ' + wrong + ', module ' + x.st);
+      await ctx.close();
+    }
+    // ---------- during the build: overlay hidden from assistive technology, nothing focusable in it, a status message
+    {
+      const { ctx, page } = await openEffect('scroll', { after: 0.6 });
+      const x = await page.evaluate(() => {
+        const r = document.getElementById('swarm-rebuild-root'), m = document.getElementById('swarm-rebuild-root-status');
+        // (copies of page parts inside the overlay are inert: not focusable, not in the accessibility tree)
+        const foc = r ? Array.from(r.querySelectorAll('a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"]),[contenteditable]')).filter((e) => !e.closest('[inert]')).length : -1;
+        return { aria: r && r.getAttribute('aria-hidden'), foc, role: m && m.getAttribute('role'), text: m ? m.textContent : '', inBody: !!(m && document.body.contains(m)), lang: document.documentElement.lang, phase: window.SwarmRebuild.state().phase };
+      });
+      report.a11y.status = x.text;
+      check('a11y: the overlay is aria-hidden and holds nothing focusable', x.aria === 'true' && x.foc === 0, 'aria-hidden ' + x.aria + ', focusable inside ' + x.foc);
+      check('a11y: screen readers get a status message while the page is hidden (outside <body>)', x.phase === 'build' && x.role === 'status' && x.text.length > 10 && !x.inBody, '[' + (x.lang || '?') + '] "' + x.text + '"');
+      await ctx.close();
+    }
+    // ---------- the first Tab ends the effect and focus lands where it would without the effect
+    {
+      const bc = await newCtx();
+      const bp2 = await bc.newPage();
+      await bp2.goto(withParams(args.url, { rebuild: '0' }), { waitUntil: 'load' });
+      await bp2.waitForTimeout(300);
+      await bp2.keyboard.press('Tab');
+      const want = await bp2.evaluate(() => { const e = document.activeElement; return e && e !== document.body ? e.outerHTML.slice(0, 120) : 'body'; });
+      await bc.close();
+      const { ctx, page } = await openEffect('scroll', { after: 0.8 });
+      const s0 = await page.evaluate(STATE);
+      await page.keyboard.press('Tab');
+      await page.waitForTimeout(150);
+      const got = await page.evaluate(() => { const e = document.activeElement; return { el: e && e !== document.body ? e.outerHTML.slice(0, 120) : 'body', vis: e ? getComputedStyle(e).visibility : '', st: window.SwarmRebuild.state(), msg: !!document.getElementById('swarm-rebuild-root-status') }; });
+      check('a11y: the first Tab ends the effect, focus lands where it would without it (no focus trap)', s0.phase === 'build' && got.st.phase === 'idle' && got.el === want && (got.el === 'body' || got.vis === 'visible'),
+        'focus on ' + got.el.slice(0, 70) + (got.el === want ? ' (same as without the effect)' : ' (without the effect: ' + want.slice(0, 70) + ')'));
+      check('a11y: the status message is gone afterwards', !got.msg);
+      await ctx.close();
+    }
   }
 
   if (CHECKS.has('manual')) {

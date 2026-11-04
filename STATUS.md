@@ -74,8 +74,8 @@ Order A, B, C, D, E, F, G, H; commit + push after every block. Full suite only o
 | D legacy backup | done | `scripts/project.cjs` install / uninstall / restore / list; `scripts/test-project.cjs` |
 | E one-command removal | done | `project.cjs uninstall [--purge]`, hash-checked against the backup |
 | F many realistic test pages | done | law, accounting, bootstrap, spa (+ 4 language pages); compatibility table in SKILL.md |
-| G perf / SEO / a11y / minified build | next | |
-| H extras | open | |
+| G perf / SEO / a11y / minified build | done | Lighthouse table, crawlers skip, status message, min build 27.5 KB gzip (budget 30 KB), dental fps cause, Next.js circle re-run |
+| H extras | next | |
 
 ### Decisions (task 4)
 
@@ -144,6 +144,21 @@ Order A, B, C, D, E, F, G, H; commit + push after every block. Full suite only o
   attributes the page changes by itself, the fixed-element pixel test waits until scrolling stops and repeats when the
   page itself moves behind a round edge, a sticky bar just finished is looked at again after 0.5 s (its placeholder
   fades), no-JS check for pages that render with JavaScript (SPA) only requires that nothing of the effect hides them.
+- (G) Size budget (visitor download, gzip): module <= 30 KB, stylesheet <= 2 KB; 1.3.0: 27.5 + 1.6 KB (source would
+  be 42.4 KB). `scripts/build-min.cjs --check` fails when the `.min` files are stale or over budget. Plain HTML installs
+  use the `.min` files; Next.js / Vite get the readable sources (their bundlers minify).
+- (G) Crawlers never get the effect (Googlebot renders JavaScript: it would have seen most of the page hidden).
+  Lighthouse is deliberately not treated as a crawler (its numbers must show what a first-time visitor gets).
+- (G) Screen readers: the hiding itself cannot be made readable (`visibility` is what lets a part show inside a hidden
+  parent; opacity could not), so a status message tells them how to get the page at once; it is in the page's
+  language (19 languages, `a11yText` overrides), outside `<body>` so the page's DOM stays untouched.
+- (G) Dental scroll -1.3 fps (1.2.0): gone - 1.3 measures 57.1 vs 56.3 (4 interleaved runs each). Most likely cause: the
+  idle swarms' constant gliding during the build (replaced by resting / faded agents in B; they are not repainted).
+  A new regression found by the same bench (demo tour 6x 57.9 -> 56.1) came from the grapheme / direction work for
+  every copy (computed for texts that are never typed, with a style recalculation each): now lazy and read from the
+  copy's inline styles -> 57.3 vs 57.2.
+- (G) Next.js "not a perfect circle" re-run with the new metric: desktop 0.149, mobile 0.202 orbit radii (limit 0.1);
+  motion, visible and a11y groups all pass on both devices.
 - (A) 1.2.0 measured with the same probe (demo desktop, reading down): 58 of 120 starts under 60 % in view (many at
   0 %), working agents off screen in 42 % of the samples. 1.3: 0 starts under 60 %, 0 off screen.
 

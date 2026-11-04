@@ -181,7 +181,10 @@ function install() {
     dest = args.dest && args.dest !== true ? String(args.dest).replace(/\/$/, '') : 'swarm-rebuild';
     const pages = args.html && args.html !== true ? String(args.html).split(',') : walk(ROOT, [], 0).filter((r) => /\.html?$/i.test(r) && !r.startsWith(dest + '/'));
     if (!pages.length) die('no HTML file found (use --html)');
-    ['swarm-rebuild.js', 'swarm-rebuild.css', 'swarm-rebuild-debug.js'].forEach((f) => copy(path.join(assets, f), dest + '/' + f));
+    // plain HTML: the minified files (built by scripts/build-min.cjs); bundlers (Next.js, Vite) minify the sources themselves
+    const min = ['swarm-rebuild.min.js', 'swarm-rebuild.min.css', 'swarm-rebuild-debug.min.js'].every((f) => fs.existsSync(path.join(assets, f)));
+    const JS = min ? 'swarm-rebuild.min.js' : 'swarm-rebuild.js', CSS = min ? 'swarm-rebuild.min.css' : 'swarm-rebuild.css';
+    [JS, CSS, min ? 'swarm-rebuild-debug.min.js' : 'swarm-rebuild-debug.js'].forEach((f) => copy(path.join(assets, f), dest + '/' + f));
     pages.forEach((r) => {
       const src = read(r);
       if (!/<head[^>]*>/i.test(src) || !/<\/body>/i.test(src)) die(r + ': no <head> or </body>; add the snippet by hand (SKILL.md step 2)');
@@ -189,10 +192,10 @@ function install() {
       edit(r, (t) => {
         const cs = /<meta[^>]+charset[^>]*>[^\S\n]*\n?/i.exec(t), h = /<head[^>]*>[^\S\n]*\n?/i.exec(t);
         const at = cs && cs.index > h.index ? cs.index + cs[0].length : h.index + h[0].length; // after <meta charset> (it must stay in the first 1024 bytes)
-        t = insertAt(t, at, block('html', '\n<script>' + snippet() + '</script>\n<link rel="stylesheet" href="' + base + '/swarm-rebuild.css">\n', '', '\n'));
+        t = insertAt(t, at, block('html', '\n<script>' + snippet() + '</script>\n<link rel="stylesheet" href="' + base + '/' + CSS + '">\n', '', '\n'));
         const b = t.search(/<\/body>(?![\s\S]*<\/body>)/i);
         const attrs = ' data-auto' + (args.mode && args.mode !== true ? ' data-mode="' + args.mode + '"' : '') + (args.focus && args.focus !== true ? ' data-focus="' + String(args.focus).replace(/"/g, '&quot;') + '"' : '');
-        return insertAt(t, b, block('html', '<script src="' + base + '/swarm-rebuild.js"' + attrs + '></script>', '', '\n'));
+        return insertAt(t, b, block('html', '<script src="' + base + '/' + JS + '"' + attrs + '></script>', '', '\n'));
       });
     });
   } else {

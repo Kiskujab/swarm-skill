@@ -80,11 +80,34 @@
     avoid: 'a[href^="tel:"],a[href^="mailto:"],button,[role="button"],input,select,textarea,[data-swarm-avoid]', // debug bar on mobile never covers these
     buildVisible: VISIBLE,   // scroll / fast: share of an element (of the viewport for taller ones) that must be in view
                              // before it starts to build (0.1..1); nothing is ever built outside the view
+    a11yText: null,          // what screen readers hear while the page is hidden; null = a short sentence in the page's language
     focus: null,             // CSS selector (or element) the opening and closing swarms gather around; null = auto
                              // (the first one in view of: [data-swarm-focus], h1, a main button, the logo)
     motion: null,            // fine-tuning of the motion, see MOTION (merged key by key)
     force: false,
     onDone: null
+  };
+  // read to screen-reader users while the content is hidden (the page's language from <html lang>; English otherwise)
+  var A11Y = {
+    en: 'Animated intro: the page builds itself. Press Escape or Tab to show it at once.',
+    hu: 'Animált bevezető: az oldal felépíti magát. Az Esc vagy a Tab billentyűvel azonnal megjelenik.',
+    de: 'Animiertes Intro: Die Seite baut sich auf. Mit Esc oder Tab erscheint sie sofort.',
+    fr: 'Introduction animée : la page se construit. Appuyez sur Échap ou Tab pour l’afficher tout de suite.',
+    es: 'Introducción animada: la página se construye sola. Pulse Esc o Tab para verla de inmediato.',
+    it: 'Introduzione animata: la pagina si costruisce da sola. Premi Esc o Tab per vederla subito.',
+    pt: 'Introdução animada: a página está a construir-se. Prima Esc ou Tab para a ver de imediato.',
+    nl: 'Geanimeerde intro: de pagina bouwt zichzelf op. Druk op Esc of Tab om haar meteen te tonen.',
+    pl: 'Animowane wprowadzenie: strona buduje się sama. Naciśnij Esc lub Tab, aby od razu ją zobaczyć.',
+    cs: 'Animovaný úvod: stránka se sama skládá. Stiskněte Esc nebo Tab a hned se zobrazí.',
+    sv: 'Animerad intro: sidan bygger sig själv. Tryck Esc eller Tabb för att visa den direkt.',
+    ru: 'Анимированное вступление: страница собирается сама. Нажмите Esc или Tab, чтобы сразу её показать.',
+    uk: 'Анімований вступ: сторінка збирається сама. Натисніть Esc або Tab, щоб одразу її показати.',
+    tr: 'Animasyonlu giriş: sayfa kendini oluşturuyor. Hemen görmek için Esc veya Tab tuşuna basın.',
+    ar: 'مقدمة متحركة: الصفحة تبني نفسها. اضغط Esc أو Tab لعرضها فوراً.',
+    he: 'פתיח מונפש: הדף נבנה מעצמו. הקישו Esc או Tab כדי להציג אותו מיד.',
+    ja: 'アニメーション表示中です。Esc キーまたは Tab キーですぐにページを表示します。',
+    zh: '动画开场：页面正在自行构建。按 Esc 或 Tab 键可立即显示页面。',
+    ko: '애니메이션 인트로: 페이지가 스스로 만들어집니다. Esc 또는 Tab 키를 누르면 바로 표시됩니다.'
   };
   var MOTION = {
     swarms: true,            // free agents move in small swarms of different sizes (false: one swarm)
@@ -282,16 +305,27 @@
     var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), list = [], n;
     while ((n = w.nextNode())) if (/\S/.test(n.data)) list.push(n);
     for (var i = 0; i < list.length; i++) {
-      var ends = graphemeEnds(list[i].data), dir = false;
-      try { dir = getComputedStyle(list[i].parentNode).direction === 'rtl'; } catch (e) { /* ignore */ }
-      if (dir) ends = ltrRuns(list[i].data, ends);
-      this.nodes.push({ n: list[i], full: list[i].data, ends: ends, rest: null, shown: ends.length, dir: dir });
-      this.total += ends.length;
+      // the grapheme ends are found only when a text is typed (copies that are never typed cost nothing); the
+      // direction comes from the computed styles the proxy carries inline (no style recalculation)
+      var full = list[i].data, pe = list[i].parentNode, dir = !!(pe && pe.style && pe.style.direction === 'rtl');
+      this.nodes.push({ n: list[i], full: full, ends: null, rest: null, shown: -1, dir: dir });
     }
     this.caret = null;
+    this.total = -1;
     if (empty) this.set(0);
   }
+  Typer.prototype.prep = function () {
+    if (this.total >= 0) return;
+    this.total = 0;
+    for (var i = 0; i < this.nodes.length; i++) {
+      var o = this.nodes[i], ends = graphemeEnds(o.full);
+      o.ends = o.dir ? ltrRuns(o.full, ends) : ends; o.shown = o.ends.length;
+      this.total += o.ends.length;
+    }
+  };
+  Typer.prototype.count = function () { this.prep(); return this.total; };
   Typer.prototype.set = function (k) {
+    this.prep();
     var rem = Math.max(0, Math.floor(k)), last = null;
     for (var i = 0; i < this.nodes.length; i++) {
       var o = this.nodes[i], take = Math.min(rem, o.ends.length);
@@ -317,7 +351,6 @@
     }
     if (this.caret && last && last.n.parentNode) {
       var r = this.range || (this.range = document.createRange()), len = last.n.data.length, rc, rtl;
-      if (last.dir == null) { try { last.dir = getComputedStyle(last.n.parentNode).direction === 'rtl'; } catch (e) { last.dir = false; } }
       if (len) {
         var g = last.shown, a0 = g > 1 ? last.ends[g - 2] : 0, ch = last.full.slice(a0, len);
         r.setStart(last.n, a0); r.setEnd(last.n, len); rc = r.getBoundingClientRect();
@@ -331,7 +364,7 @@
       this.caret.style.transform = 'translate3d(' + ((rtl ? rc.left - 3 : rc.right + 1) + window.scrollX) + 'px,' + (rc.top + window.scrollY) + 'px,0)';
     }
   };
-  Typer.prototype.end = function () { this.set(this.total); rm(this.caret); this.caret = null; };
+  Typer.prototype.end = function () { if (this.total >= 0) this.set(this.total); rm(this.caret); this.caret = null; };
   Typer.prototype.done = function () { rm(this.caret); this.caret = null; this.noCaret = true; }; // typing finished: no caret
 
   // -------------------------------------------------------------- overlay UI
@@ -445,8 +478,11 @@
   };
   // Head snippet: hides the content before first paint, starts the dead-man switch, and shows the page again
   // after 5 s if the module never started (blocked, failed to load).
-  var SNIPPET = "(function(d,w){w.__swarmRebuildSnippet=1;try{var q=new URLSearchParams(location.search).get('rebuild');if(q==='0')return;if(w.matchMedia&&w.matchMedia('(prefers-reduced-motion: reduce)').matches)return;if(q!=='1'&&sessionStorage.getItem('swarm-rebuild:seen'))return;var s=d.createElement('style');s.id='swarm-rebuild-hide';s.textContent='" + HIDE_CSS + "';d.head.appendChild(s);try{w.__srDms=d.documentElement.animate([{'--sr-v':'visible','--sr-o':'0'}],{duration:1,delay:" + DMS_MS + ",fill:'forwards'})}catch(e){}setTimeout(function(){var r=w.SwarmRebuild;if(!(r&&r.active)){var e=d.getElementById('swarm-rebuild-hide');if(e)e.remove()}}," + DMS_MS + ")}catch(e){}})(document,window);";
+  var SNIPPET = "(function(d,w){w.__swarmRebuildSnippet=1;try{var q=new URLSearchParams(location.search).get('rebuild');if(q==='0')return;if(/bot\\b|crawl|spider|slurp|mediapartners|inspectiontool|facebookexternalhit|embedly|preview|whatsapp|telegram|discord|semrush|ahrefs|yandex|baidu|duckduck|petal|bytespider/i.test(navigator.userAgent||''))return;if(w.matchMedia&&w.matchMedia('(prefers-reduced-motion: reduce)').matches)return;if(q!=='1'&&sessionStorage.getItem('swarm-rebuild:seen'))return;var s=d.createElement('style');s.id='swarm-rebuild-hide';s.textContent='" + HIDE_CSS + "';d.head.appendChild(s);try{w.__srDms=d.documentElement.animate([{'--sr-v':'visible','--sr-o':'0'}],{duration:1,delay:" + DMS_MS + ",fill:'forwards'})}catch(e){}setTimeout(function(){var r=w.SwarmRebuild;if(!(r&&r.active)){var e=d.getElementById('swarm-rebuild-hide');if(e)e.remove()}}," + DMS_MS + ")}catch(e){}})(document,window);";
 
+  // search engines and link previews render the page with JavaScript: they always get the finished page
+  var BOTS = /bot\b|crawl|spider|slurp|mediapartners|inspectiontool|facebookexternalhit|embedly|preview|whatsapp|telegram|discord|semrush|ahrefs|yandex|baidu|duckduck|petal|bytespider/i;
+  function isBot() { try { return BOTS.test(navigator.userAgent || ''); } catch (e) { return false; } }
   function motionOff(o) {
     try { return !!(o.motionOffSelector && document.querySelector(o.motionOffSelector)); } catch (e) { return false; }
   }
@@ -475,7 +511,7 @@
       if (q.get('rebuild-visible')) o.buildVisible = parseFloat(q.get('rebuild-visible'));
     }
     var force = o.force || q.get('rebuild') === '1';
-    var skip = q.get('rebuild') === '0' || reducedMotion() || motionOff(o) || (typeof o.skipIf === 'function' && o.skipIf());
+    var skip = q.get('rebuild') === '0' || isBot() || reducedMotion() || motionOff(o) || (typeof o.skipIf === 'function' && o.skipIf());
     if (!skip && !force && o.once && store(SEEN_KEY)) skip = true;
     if (!skip && !hideEl() && window.__swarmRebuildSnippet && !force) skip = true; // snippet decided "no" (or its watchdog fired)
     if (!skip && dmsFired()) skip = true;      // the dead-man switch already showed the page: too late to start
@@ -595,6 +631,15 @@
     for (k = 0; k < 16; k++) st.guides.push(mk('i', 'sr-guide', st.guideLayer));
     st.root = root;
     document.documentElement.appendChild(root);
+    // the content is hidden from screen readers too while it is built: tell them how to get it at once. Outside the
+    // overlay (which is aria-hidden) and outside <body> (the page's DOM stays untouched); removed at the end.
+    var lang = (document.documentElement.lang || 'en').toLowerCase(), msg = st.o.a11yText || A11Y[lang] || A11Y[lang.split('-')[0]] || A11Y.en;
+    var a11 = st.a11y = document.createElement('div');
+    a11.id = ROOT_ID + '-status';
+    a11.setAttribute('role', 'status');
+    a11.setAttribute('style', 'position:fixed!important;left:0;top:0;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;margin:-1px;padding:0;border:0;visibility:visible!important');
+    a11.textContent = msg;
+    document.documentElement.appendChild(a11);
   }
 
   function createAgents(st) {
@@ -1683,7 +1728,7 @@
         if (L.rtl) tk.proxy.el.style.transformOrigin = '100% 0';
         if (scale !== 1) tk.proxy.el.style.transform = 'scale(' + scale + ')';
         if (fromPh && tk.ph) { tk.ph.remove(); tk.ph = null; }
-        chars = tk.proxy.typer.total;
+        chars = tk.proxy.typer.count();
         // how long typing takes depends on the size of the box (the task's difficulty), not on the letters
         this.d = st.typeBase / tk.sw;
         tk.agent.setMode('ibeam');
@@ -1930,7 +1975,7 @@
             }
             var mpx = tk.mp[i];
             q = Math.min(1, q);
-            mpx.typer.set(mpx.typer.total * clamp(q * 1.15, 0, 1));
+            mpx.typer.set(mpx.typer.count() * clamp(q * 1.15, 0, 1));
             var f = 'blur(' + ((1 - q) * 6).toFixed(1) + 'px) brightness(' + (0.45 + 0.55 * q).toFixed(2) + ')';
             for (var k = 0; k < mpx.imgs.length; k++) mpx.imgs[k].style.filter = q < 1 ? f : '';
             copies[i].el.style.opacity = String(clamp(1 - q * 2.5, 0, 1));
@@ -2373,6 +2418,7 @@
     if (st.mo) st.mo.disconnect();
     if (st.dbg) { try { st.dbg.teardown(st); } catch (e) { /* ignore */ } }
     rm(st.root);
+    rm(st.a11y);
     removeStyles();
     dmsStop();
     S = null;

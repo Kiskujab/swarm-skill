@@ -17,7 +17,8 @@ and this file disagree, this file wins (product decisions were made after the de
 
 | File | Purpose |
 |---|---|
-| `assets/swarm-rebuild.js` | The module (classic script, sets `window.SwarmRebuild`; also importable from a bundler). |
+| `assets/swarm-rebuild.js` | The module, readable source (classic script, sets `window.SwarmRebuild`; also importable from a bundler). |
+| `assets/swarm-rebuild.min.js`, `swarm-rebuild-debug.min.js`, `swarm-rebuild.min.css` | Minified builds for plain HTML sites (`scripts/build-min.cjs`; the installer uses them; bundlers minify the sources themselves). |
 | `assets/swarm-rebuild.css` | Overlay styles, all scoped under `#swarm-rebuild-root`. |
 | `assets/swarm-rebuild-debug.js` | Debug add-on: control bar, auto-scroll tour, test hooks. Never loaded for visitors; fetched only with `?rebuild-debug=1` / `debug: true`. Install it next to the module anyway (it is how you test on the live site). |
 | `assets/react/SwarmRebuild.jsx` | React / Next.js client wrapper + `<SwarmRebuildHead />` (pre-paint snippet); the debug add-on is a separate lazy chunk. |
@@ -32,6 +33,9 @@ and this file disagree, this file wins (product decisions were made after the de
 | `scripts/bench-fps.cjs` | Frame rate of an older module version against the current one, same machine, interleaved runs. |
 | `scripts/build-site.cjs` | Builds the three test pages as one static site (GitHub Pages) or serves it on the local network. |
 | `scripts/next-app.cjs` | Helper: prepares / builds the Next.js test app in a temp folder. |
+| `scripts/build-min.cjs` | Builds the `.min` files and checks the size budget (needs terser and csso from npm). |
+| `scripts/perf.cjs` | Lighthouse metrics (LCP, CLS, TBT, Speed Index, accessibility, SEO) with and without the effect. |
+| `scripts/sync-snippet.cjs` | Copies the module's head snippet into the React wrapper, SKILL.md and the test pages. |
 | `scripts/project.cjs` | Installs the effect into a project with a backup in `legacy/`, removes it again, restores the originals. |
 | `scripts/test-project.cjs` | Tests the installer: backup, restore after a broken project (hash-identical), uninstall. |
 
@@ -122,6 +126,37 @@ left to right (`direction: ltr` on its root) so a right-to-left page never mirro
 Arabic-Indic digits, a Hebrew quote), `lang-ja` (Japanese), `lang-emoji`. Known limit: vertical writing modes
 (`writing-mode: vertical-rl`) are typed but the frames still grow left to right.
 
+## Performance, search engines, accessibility
+
+- **Size** (what a visitor downloads; the debug add-on never): module 70 KB minified / 27.5 KB gzip, stylesheet
+  6 KB / 1.6 KB; budget 30 KB + 2 KB gzip (`node scripts/build-min.cjs --check`). Rebuild the `.min` files after every
+  change to the module (`--modules <folder with terser and csso>`).
+- **Lighthouse** (`scripts/perf.cjs`, median of 3, mobile / desktop presets, the test machine without GPU):
+
+  | page | LCP ms off -> on | CLS off -> on | TBT ms off -> on | Speed Index ms off -> on | perf score |
+  |---|---|---|---|---|---|
+  | demo, mobile | 2106 -> 2207 | 0 -> 0 | 12 -> 10 | 968 -> 1669 | 99 -> 99 |
+  | demo, desktop | 483 -> 573 | 0 -> 0 | 0 -> 0 | 266 -> 681 | 100 -> 100 |
+  | dental, mobile | 1956 -> 2035 | 0 -> 0 | 0 -> 0 | 754 -> 1763 | 99 -> 99 |
+  | dental, desktop | 442 -> 490 | 0 -> 0 | 0 -> 0 | 201 -> 767 | 100 -> 100 |
+  | law (web fonts), mobile | 2094 -> 2222 | 0.030 -> 0 | 0 -> 0 | 1895 -> 2386 | 98 -> 97 |
+  | accounting (long page), mobile | 1707 -> 1973 | 0 -> 0 | 0 -> 0 | 1652 -> 1697 | 99 -> 98 |
+
+  No blocking time and no layout shift (the law page's own font swap shift is even hidden). LCP grows by 50-270 ms
+  and Speed Index by up to ~1 s: the first view is built in front of the visitor, so it is visually complete later -
+  that is the effect itself. Only first-time visitors (once per session) pay it; returning visitors and crawlers get
+  the page at once. Accessibility / SEO scores move by a point either way only because Lighthouse sees less of the
+  page while it is hidden.
+- **Search engines and link previews:** crawlers (user agent with bot / crawl / spider, Googlebot, Bingbot,
+  facebookexternalhit, link previews ...) never get the effect, neither in the head snippet nor in the module: they
+  see the finished page with the identical DOM (`a11y` check). Without JavaScript the page is never hidden, and the
+  effect never removes content (it only uses `visibility`).
+- **Accessibility:** the overlay is `aria-hidden` and its copies are `inert` (nothing focusable); while the content
+  is hidden, screen readers get one status message in the page's language (`<html lang>`: en, hu, de, fr, es, it, pt,
+  nl, pl, cs, sv, ru, uk, tr, ar, he, ja, zh, ko; `a11yText` overrides), placed outside `<body>` and removed at the end;
+  the first Tab ends the effect and focus lands exactly where it would without it; `prefers-reduced-motion` means no
+  effect; any key or click ends it (scroll keys excepted).
+
 ## Compatibility (tested on the local test pages; real sites cannot be reached from the test machine)
 
 | pattern | result | what to know |
@@ -210,19 +245,20 @@ does not fit (no `</body>` in the layout, a custom document...), the installer s
 install by hand as below, **after** saving the files you will change into `legacy/<YYYYMMDD-HHMMSS>-manual/files/<path>.orig`
 with a `backup.txt` (see Backup and removal).
 
-**Plain HTML** - copy `swarm-rebuild.js`, `swarm-rebuild.css` and `swarm-rebuild-debug.js` into one folder of the site
+**Plain HTML** - copy `swarm-rebuild.min.js`, `swarm-rebuild.min.css` and `swarm-rebuild-debug.min.js` (or the readable
+`.js` / `.css` files while developing) into one folder of the site
 (e.g. `/assets/swarm-rebuild/`), then:
 
 ```html
 <head>
   ...
   <!-- must be inline and early in <head>: hides content before first paint (layout untouched), starts the safety switch -->
-  <script>(function(d,w){w.__swarmRebuildSnippet=1;try{var q=new URLSearchParams(location.search).get('rebuild');if(q==='0')return;if(w.matchMedia&&w.matchMedia('(prefers-reduced-motion: reduce)').matches)return;if(q!=='1'&&sessionStorage.getItem('swarm-rebuild:seen'))return;var s=d.createElement('style');s.id='swarm-rebuild-hide';s.textContent='@layer swarm-rebuild{body *{visibility:var(--sr-v,hidden)!important}#swarm-rebuild-root{opacity:var(--sr-o,1)!important}}';d.head.appendChild(s);try{w.__srDms=d.documentElement.animate([{'--sr-v':'visible','--sr-o':'0'}],{duration:1,delay:5000,fill:'forwards'})}catch(e){}setTimeout(function(){var r=w.SwarmRebuild;if(!(r&&r.active)){var e=d.getElementById('swarm-rebuild-hide');if(e)e.remove()}},5000)}catch(e){}})(document,window);</script>
-  <link rel="stylesheet" href="/assets/swarm-rebuild/swarm-rebuild.css">
+  <script>(function(d,w){w.__swarmRebuildSnippet=1;try{var q=new URLSearchParams(location.search).get('rebuild');if(q==='0')return;if(/bot\b|crawl|spider|slurp|mediapartners|inspectiontool|facebookexternalhit|embedly|preview|whatsapp|telegram|discord|semrush|ahrefs|yandex|baidu|duckduck|petal|bytespider/i.test(navigator.userAgent||''))return;if(w.matchMedia&&w.matchMedia('(prefers-reduced-motion: reduce)').matches)return;if(q!=='1'&&sessionStorage.getItem('swarm-rebuild:seen'))return;var s=d.createElement('style');s.id='swarm-rebuild-hide';s.textContent='@layer swarm-rebuild{body *{visibility:var(--sr-v,hidden)!important}#swarm-rebuild-root{opacity:var(--sr-o,1)!important}}';d.head.appendChild(s);try{w.__srDms=d.documentElement.animate([{'--sr-v':'visible','--sr-o':'0'}],{duration:1,delay:5000,fill:'forwards'})}catch(e){}setTimeout(function(){var r=w.SwarmRebuild;if(!(r&&r.active)){var e=d.getElementById('swarm-rebuild-hide');if(e)e.remove()}},5000)}catch(e){}})(document,window);</script>
+  <link rel="stylesheet" href="/assets/swarm-rebuild/swarm-rebuild.min.css">
 </head>
 <body>
   ...
-  <script src="/assets/swarm-rebuild/swarm-rebuild.js" data-auto></script>
+  <script src="/assets/swarm-rebuild/swarm-rebuild.min.js" data-auto></script>
 </body>
 ```
 (or omit `data-auto` and call `SwarmRebuild.start({ ... })` yourself). `data-auto` reads `data-mode`, `data-speed`,
@@ -294,6 +330,7 @@ Working example: `tests/pages/nextjs/`.
 | `controlsPosition` | `'right'` | debug bar: `'right'` \| `'left'` \| `'bottom'`; collapses to a thin tab when it would cover content; mobile: a small tab in a free corner |
 | `avoid` | `a[href^="tel:"],a[href^="mailto:"],button,[role="button"],input,select,textarea,[data-swarm-avoid]` | mobile debug tab never covers these (nor fixed elements and button-like links) |
 | `buildVisible` | `0.6` | scroll / fast: share of an element (of the screen for taller ones) that must be in view before it starts (0.1..1). Measured: every start 60-100 % in view (median 100 %), the same build time with 0.5..0.8; higher values leave a part at the bottom edge empty longer while the visitor rests |
+| `a11yText` | in the page's language | the status message screen readers get while the page is hidden |
 | `focus` | `null` (auto) | selector or element the opening / finale swarms gather around (see Motion); ask the developer |
 | `motion` | see below | merged key by key: `swarms` (true), `mouse` (true), `arc` (1 = gravity sag, 0 = straight), `difficulty` (1, 0 = all tasks alike), `spring` (1 = finale overshoot, 0 = none), `lite` (`'auto'` \| true \| false) |
 | `onDone` | `null` | callback `{elapsed, layers, agents}` or `{skipped: true, reason}` |
@@ -335,8 +372,9 @@ perfect circle, the finale's spring pull with overshoot and slow circling, mouse
 36 px, shorter follows when the pointer leaves faster, moves do not end the effect; gravity sag of horizontal moves and
 none of vertical ones; difficulty: bigger parts take longer, at most ~4x; contact sheets `sheet-opening.jpg` /
 `sheet-finale.jpg`), `manual` (debug tour interrupted by wheel scrolling, then a scroll-mode run),
-`text` (typing in any language: every frame, the typed part of every text ends on a character boundary, and the
-caret sits after the last typed character on its writing side), `all` = record,extra,product,protect,fixed,visible,text,motion. `--interact "<selector>"` also clicks an element after the effect and
+`a11y` (crawlers get the finished page, overlay aria-hidden with nothing focusable, status message, the first Tab ends
+it without a focus trap), `text` (typing in any language: every frame, the typed part of every text ends on a character boundary, and the
+caret sits after the last typed character on its writing side), `all` = record,extra,product,protect,fixed,visible,text,a11y,motion. `--interact "<selector>"` also clicks an element after the effect and
 expects its text to change (e.g. a React counter). Every run has a hard time limit (`--timeout`, default 400 s).
 
 All checks must pass: run to the end, monotonic counters, auto-scroll ends at the bottom (tour), fps >= `--min-fps`
