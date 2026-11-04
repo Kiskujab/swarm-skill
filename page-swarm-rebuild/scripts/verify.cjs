@@ -4,7 +4,7 @@
  *
  *   node verify.cjs --url http://localhost:5500/ [--mode scroll|fast|tour] [--speed 6] [--out ./swarm-check]
  *                   [--device desktop|mobile] [--viewport 1440x900] [--fps 10]
- *                   [--checks all|record|extra|product|protect|fixed|motion|manual (comma list)]
+ *                   [--checks all|record|extra|product|protect|fixed|visible|motion|manual (comma list)]
  *                   [--interact "<selector>"] [--min-fps 50] [--timeout 400] [--video ref.mp4 --crop 930:500:90:690]
  *
  * --mode / --speed   the recorded run. scroll and fast are what visitors get (no control bar, the page follows
@@ -22,12 +22,15 @@
  *            a resize and a background tab all end with the whole page visible
  *   fixed    the overlay never draws over position:fixed elements (and finished sticky ones): pixel test
  *            at many moments of a visitor run (overlay shown vs. hidden, the module paused)
+ *   visible  scroll mode builds only what is in view: every part starts with at least the start share (60 %) of
+ *            it in view, no working agent is ever outside the view, no task runs out of view, and after fast
+ *            scrolls (wheel bursts, Page Down, End) the view is filled within ~1-2 s; contact sheet sheet-visible.jpg
  *   motion   the motion (debug add-on measurements): opening swarms around the focus element with changing speed,
  *            the finale's spring-like pull (overshoot) and slow circling, mouse play (dodge, follow shorter when the
  *            pointer leaves faster, never closer than 36 px, desktop only), gravity sag of horizontal moves (none for
  *            vertical ones), task difficulty (bigger = longer, at most ~4x); contact sheets of the opening and finale
  *   manual   the visitor takes over: a debug tour interrupted by wheel scrolling, then a scroll-mode run
- *   all      record,extra,product,protect,fixed,motion
+ *   all      record,extra,product,protect,fixed,visible,motion
  *
  * Frame rate is measured in a separate run without screenshots. It depends on the machine: a cloud
  * container without a GPU reaches ~46-55 fps with the demo where a normal laptop reaches ~59, so lower
@@ -67,7 +70,7 @@ const MOBILE = args.device === 'mobile';
 const [VW, VH] = String(args.viewport || (MOBILE ? '390x844' : '1440x900')).split('x').map(Number);
 const FPS = Number(args.fps || 10);
 const CHECKS = new Set(String(args.checks || 'all').split(','));
-if (CHECKS.has('all')) ['record', 'extra', 'product', 'protect', 'fixed', 'motion'].forEach((c) => CHECKS.add(c));
+if (CHECKS.has('all')) ['record', 'extra', 'product', 'protect', 'fixed', 'visible', 'motion'].forEach((c) => CHECKS.add(c));
 const TIMEOUT_S = Number(args.timeout || 400);
 const MIN_FPS = Number(args['min-fps'] || 50);
 fs.mkdirSync(path.join(OUT, 'frames'), { recursive: true });
@@ -679,6 +682,103 @@ function fixedTargets() {
     await ctx.close();
   }
 
+
+  if (CHECKS.has('visible')) {
+    // ---------- scroll mode: only what is in view is built
+    report.visible = {};
+    // in the page, every frame: working agents outside the view (at the scroll position the frame was drawn for),
+    // tasks whose part is completely out of view
+    const SAMPLER = () => {
+      const v = window.__visS = { frames: 0, work: 0, offAgents: 0, offTasks: 0, ex: [] };
+      (function f() {
+        const R = window.SwarmRebuild, m = R && R._motion && R._motion(true);
+        if (m && m.phase === 'build' && !m.touring) {
+          v.frames++;
+          m.agents.forEach((a) => { if (!a.work) return; v.work++; if (a.y < m.sy - 2 || a.y > m.sy + m.vh + 2) { v.offAgents++; if (v.ex.length < 4) v.ex.push(Math.round(a.y - m.sy)); } });
+          v.offTasks += m.offTasks || 0;
+        }
+        if (!R || R.state().phase !== 'idle') requestAnimationFrame(f);
+      })();
+    };
+    {
+      // reading down at a normal pace
+      const { ctx, page, bag } = await openEffect('scroll', { debug: true, waitUntil: 'domcontentloaded' });
+      await page.evaluate(SAMPLER);
+      await readDown(page, 0.35, 500, 90000);
+      const mo = await page.evaluate(() => window.SwarmRebuild._motion());
+      const s = await page.evaluate(STATE);
+      const v = await page.evaluate(() => window.__visS);
+      const starts = (mo && mo.starts) || [], vs = starts.map((x) => x.vis).sort((a, b) => a - b);
+      const thr = s.buildVisible || 0.6;
+      const under = starts.filter((x) => x.vis < thr - 0.005);
+      report.visible.read = { starts: vs.length, min: vs[0], p10: vs[Math.floor(vs.length * 0.1)], median: vs[vs.length >> 1], threshold: thr, under: under.length, workSamples: v.work, offAgents: v.offAgents, offTasks: v.offTasks, skips: { above: s.aboveSkips, offView: s.offSkips, deps: s.depSkips } };
+      check('visible: every part starts with at least ' + Math.round(thr * 100) + ' % of it in view (reading down)', vs.length > 0 && under.length === 0,
+        vs.length + ' starts, in view at the start: min ' + Math.round((vs[0] || 0) * 100) + ' %, 10th percentile ' + Math.round((report.visible.read.p10 || 0) * 100) + ' %, median ' + Math.round((report.visible.read.median || 0) * 100) + ' %' + (under.length ? ', under: ' + JSON.stringify(under.slice(0, 3)) : ''));
+      check('visible: no working agent outside the view, no task running out of view (reading down)', v.work > 0 && v.offAgents === 0 && v.offTasks === 0,
+        v.frames + ' frames, ' + v.work + ' working-agent samples, outside ' + v.offAgents + (v.ex.length ? ' (' + v.ex.join(', ') + ' px)' : '') + ', tasks out of view ' + v.offTasks + '; finished out of sight: ' + s.aboveSkips + ' above, ' + s.offSkips + ' scrolled out, ' + s.depSkips + ' waited-for');
+      check('visible: reading-down run — no errors', !bag.length && !bag.fallbacks.length, (bag.concat(bag.fallbacks)).slice(0, 3).join(' | '));
+      await ctx.close();
+    }
+    {
+      // fast scrolling: wheel bursts, Page Down twice, End; how long until everything in view is built
+      const { ctx, page, bag } = await openEffect('scroll', { debug: true, after: 1.2 });
+      await page.evaluate(SAMPLER);
+      const dir = path.join(OUT, 'visible');
+      fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
+      const fills = [];
+      let shots = 0, s = await page.evaluate(STATE);
+      const jumps = ['wheel', 'wheel', 'pgdn', 'wheel', 'wheel', 'pgdn', 'wheel', 'end'];
+      for (let j = 0; j < jumps.length && s.phase === 'build'; j++) {
+        const kind = jumps[j];
+        if (kind === 'wheel') for (let k = 0; k < 3; k++) { await page.mouse.wheel(0, Math.round(VH * 0.6)); await page.waitForTimeout(40); }
+        else if (kind === 'pgdn') { await page.keyboard.press('PageDown'); await page.waitForTimeout(80); await page.keyboard.press('PageDown'); }
+        else await page.keyboard.press('End');
+        const t0 = Date.now();
+        await page.waitForTimeout(120);
+        let first = null, left = 1, filledAt = null, marks = j < 3 ? [0.1, 0.6, 1.2, 2.0] : [];
+        while (Date.now() - t0 < 6000) {
+          s = await page.evaluate(STATE).catch(() => ({ phase: 'err' }));
+          left = s.phase === 'build' && s.inView ? s.inView.left : 0;
+          if (first == null) first = left;
+          const el = (Date.now() - t0) / 1000;
+          if (left === 0 && filledAt == null) filledAt = el;
+          if (marks.length && el >= marks[0]) { marks.shift(); await page.screenshot({ path: path.join(dir, 'v' + String(shots++).padStart(2, '0') + '.png'), caret: 'initial' }).catch(() => {}); }
+          if (filledAt != null && !marks.length) break;
+          await page.waitForTimeout(40);
+        }
+        if (first) fills.push({ kind, parts: first, s: filledAt != null ? +filledAt.toFixed(2) : 6, filled: filledAt != null });
+        if (s.phase !== 'build') break;
+        await page.waitForTimeout(250);
+      }
+      // the fill time is measured until the view holds nothing to build (time spent on contact-sheet shots included)
+      const ft = fills.filter((f) => f.parts > 0);
+      const avg = ft.length ? ft.reduce((a, f) => a + f.s, 0) / ft.length : 0, max = Math.max(0, ...ft.map((f) => f.s));
+      const v = await page.evaluate(() => window.__visS);
+      const mo = await page.evaluate(() => window.SwarmRebuild._motion && window.SwarmRebuild._motion());
+      const starts = (mo && mo.starts) || [], thr = (await page.evaluate(STATE)).buildVisible || 0.6;
+      const under = starts.filter((x) => x.vis < thr - 0.005);
+      report.visible.fast = { jumps: fills, avgFill: +avg.toFixed(2), maxFill: +max.toFixed(2), starts: starts.length, under: under.length, offAgents: v.offAgents, offTasks: v.offTasks };
+      check('visible: after fast scrolling the view is built quickly (avg <= 2 s, max <= 3 s)', ft.length > 0 && ft.every((f) => f.filled) && avg <= 2 && max <= 3,
+        ft.map((f) => f.kind + ' ' + f.parts + ' parts ' + f.s + ' s').join(', ') + ' — avg ' + avg.toFixed(2) + ' s');
+      check('visible: fast scrolling — starts only in view, no working agent outside it', under.length === 0 && v.offAgents === 0 && v.offTasks === 0,
+        starts.length + ' starts, ' + under.length + ' under ' + Math.round(thr * 100) + ' %, agents outside ' + v.offAgents + ', tasks out of view ' + v.offTasks);
+      await page.evaluate(() => window.SwarmRebuild.goLive()).catch(() => {});
+      await page.waitForTimeout(200);
+      const g = await page.evaluate(gone);
+      check('visible: fast scrolling run ends with the original DOM, no errors', isFinished(g, baseDom) && !bag.length && !bag.fallbacks.length, 'root ' + g.root + ', hide ' + g.hide + ', reveal ' + g.reveal + ', DOM ' + (g.dom === baseDom ? 'same' : 'differs at …' + JSON.stringify(g.dom.slice(Math.max(0, firstDiff(baseDom, g.dom) - 80), firstDiff(baseDom, g.dom) + 60))) + ' ' + (bag.concat(bag.fallbacks)).slice(0, 3).join(' | '));
+      await ctx.close();
+      try {
+        execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' });
+        if (shots >= 4) {
+          const out = path.join(OUT, 'sheet-visible.jpg');
+          execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-pattern_type', 'glob', '-i', path.join(dir, 'v*.png'), '-vf', 'scale=' + (MOBILE ? 260 : 480) + ':-1,tile=4x' + Math.ceil(shots / 4) + ':padding=4:color=white', '-frames:v', '1', out], { timeout: 60000 });
+          report.visible.sheet = out;
+        }
+        fs.rmSync(dir, { recursive: true, force: true });
+      } catch (e) { console.log('(visible contact sheet skipped: ' + (e.message || e).toString().split('\n')[0] + ')'); }
+    }
+  }
+
   if (CHECKS.has('manual')) {
     // ---------- the visitor takes over: debug tour interrupted by scrolling, then scroll mode (no flag)
     report.manual = {};
@@ -698,7 +798,7 @@ function fixedTargets() {
       const fin = await st();
       check(label + ': run reaches the end', fin.phase === 'done' || fin.phase === 'idle', 'phase ' + fin.phase + ', ' + (fin.layersDone || 0) + '/' + (fin.layersTotal || 0) + ' layers, ' + r.steps + ' wheel steps');
       const maxAhead = fin.maxAhead != null ? fin.maxAhead : r.s.maxAhead;
-      check(label + ': never builds more than 0.5 viewport below the view', maxAhead != null && maxAhead <= 0.55, 'max ahead ' + maxAhead + ' viewport heights');
+      check(label + ': never starts anything below the view', maxAhead != null && maxAhead <= 0, 'lowest start ' + maxAhead + ' viewport heights below the bottom edge (negative: inside the view)');
       const w = fin.waits || r.s.waits;
       check(label + ': empty layers scrolled into view start quickly (avg <= 1.0 s, max <= 3.0 s)', !w || (w.avg <= 1.0 && w.max <= 3.0), w ? 'n=' + w.n + ' avg ' + w.avg + ' s, max ' + w.max + ' s' : 'no layer came into view empty');
       if (startMode === 'tour') {

@@ -232,9 +232,12 @@
         var s = st;
         if (!s || !s.mlog) return null;
         var ag = [];
-        s.agents.forEach(function (a) { if (a.active) ag.push({ x: Math.round(a.x), y: Math.round(a.y), tx: Math.round(a.tgx || a.x), ty: Math.round(a.tgy || a.y), sw: s.swarms.indexOf(a.swarm), task: !!a.task, mf: !!a.mf }); });
-        var out = { phase: s.phase, t: core.now() - s.t0, agents: ag, orbit: s.phase === 'done' ? s.finO : s.openO, follows: s.mz.follows, minD: s.mz.minD, dodges: s.mz.dodges };
-        if (!light) { out.moves = s.mlog.moves; out.tasks = s.mlog.tasks; }
+        s.agents.forEach(function (a) { if (a.active) ag.push({ x: Math.round(a.x), y: Math.round(a.y), tx: Math.round(a.tgx || a.x), ty: Math.round(a.tgy || a.y), sw: s.swarms.indexOf(a.swarm), task: !!a.task, work: !!(a.task && a.task.pi >= 1 && a.task.agent === a), mf: !!a.mf }); });
+        var out = { phase: s.phase, t: core.now() - s.t0, sy: s.rsy, vh: window.innerHeight, touring: s.touring, agents: ag, orbit: s.phase === 'done' ? s.finO : s.openO, follows: s.mz.follows, minD: s.mz.minD, dodges: s.mz.dodges };
+        var off = 0, vh = window.innerHeight;
+        s.active.forEach(function (tk) { var b = core.taskBox(tk); if (b.y >= s.rsy + vh || b.y + b.h <= s.rsy) off++; });
+        out.offTasks = off;
+        if (!light) { out.moves = s.mlog.moves; out.tasks = s.mlog.tasks; out.starts = s.mlog.starts; }
         return out;
       };
     }

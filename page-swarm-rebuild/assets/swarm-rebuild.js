@@ -31,7 +31,7 @@
   var REVEAL_ID = 'swarm-rebuild-reveal';
   var ROOT_ID = 'swarm-rebuild-root';
   var SEEN_KEY = 'swarm-rebuild:seen';
-  var AHEAD = 0.5;        // build at most half a viewport below the visible area
+  var VISIBLE = 0.6;      // scroll / fast: an element starts only when this share of it (of the viewport for taller ones) is in view
   var ABOVE = 0.1;        // hysteresis: a layer that is this much (of a viewport, min. 40 px) above the view is finished at once
   var TASK_MAX = 8;       // s: a task running longer than this is finished without animation (watchdog)
   var LOOP_MAX = 2.5;     // s without an animation frame while the tab is visible: show the page
@@ -76,6 +76,8 @@
     debugSrc: null,          // URL of swarm-rebuild-debug.js; null = next to this file
     controlsPosition: 'right', // debug control bar: 'right' | 'left' | 'bottom' (mobile: a small tab near a free corner)
     avoid: 'a[href^="tel:"],a[href^="mailto:"],button,[role="button"],input,select,textarea,[data-swarm-avoid]', // debug bar on mobile never covers these
+    buildVisible: VISIBLE,   // scroll / fast: share of an element (of the viewport for taller ones) that must be in view
+                             // before it starts to build (0.1..1); nothing is ever built outside the view
     focus: null,             // CSS selector (or element) the opening and closing swarms gather around; null = auto
                              // (the first one in view of: [data-swarm-focus], h1, a main button, the logo)
     motion: null,            // fine-tuning of the motion, see MOTION (merged key by key)
@@ -413,6 +415,7 @@
         if (m && m[1] in MOTION) o.motion[m[1]] = m[2] === 'auto' ? 'auto' : m[2] === 'true' ? true : m[2] === 'false' ? false : parseFloat(m[2]);
       });
       if (q.get('rebuild-focus')) o.focus = q.get('rebuild-focus');
+      if (q.get('rebuild-visible')) o.buildVisible = parseFloat(q.get('rebuild-visible'));
     }
     var force = o.force || q.get('rebuild') === '1';
     var skip = q.get('rebuild') === '0' || reducedMotion() || motionOff(o) || (typeof o.skipIf === 'function' && o.skipIf());
@@ -450,16 +453,18 @@
       sections: [], sectionOpen: [], timers: [], listeners: [], fixedEls: [], stickyEls: [], outs: [],
       revealed: new WeakSet(), holeEls: [], holeKey: '',
       seenStats: { initial: { pending: 0, active: 0, done: 0 }, tour: { pending: 0, active: 0, done: 0 }, manual: { pending: 0, active: 0, done: 0 } },
-      waits: [], maxAhead: 0, aboveSkips: 0, aborts: 0, errors: 0, late: 0
+      waits: [], maxAhead: -1, aboveSkips: 0, offSkips: 0, depSkips: 0, aborts: 0, errors: 0, late: 0,
+      startVis: { n: 0, min: 1, sum: 0 }
     };
     api.active = true;
     var factory = window.SwarmRebuildDebug;
     if (o.debug && typeof factory === 'function') {
       try { st.dbg = factory(core, st); } catch (e) { warn('debug add-on failed', e); st.dbg = null; }
     }
-    if (st.dbg) st.mlog = { moves: [], tasks: [] }; // measurements for the tests (debug only)
+    if (st.dbg) st.mlog = { moves: [], tasks: [], starts: [] }; // measurements for the tests (debug only)
     if (o.mode === 'tour' && !st.dbg) { warn('mode "tour" needs the debug add-on (?rebuild-debug=1); using "scroll"'); o.mode = 'scroll'; }
     st.touring = o.mode === 'tour';
+    st.vmin = clamp(+o.buildVisible || VISIBLE, 0.1, 1);
     st.speedBase = o.speed || MODE_SPEED[o.mode];
     st.hiddenMax = o.hiddenMax != null && !isNaN(o.hiddenMax) ? o.hiddenMax : HIDDEN_MAX;
     st.mobile = window.innerWidth < 760 || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
@@ -1137,6 +1142,7 @@
     if (S !== st) return;
     renderAgents(st, t, dt);
     var sy = window.scrollY, sx = window.scrollX;
+    st.rsy = sy; // the scroll position this frame was drawn for (test measurements)
     st.world.style.transform = 'translate3d(' + (-sx) + 'px,' + (-sy) + 'px,0)';
     renderGuides(st, t, sy, sx, vw, vh);
     if (st.dbg) st.dbg.hud(st, false);
@@ -1188,9 +1194,10 @@
   function buildStep(st, t, dt, vw, vh) {
     var sp = st.speedBase * st.mult;
     wanderSwarms(st, t, dt, vw, vh);
-    var sy = window.scrollY, cut = sy - Math.max(40, vh * ABOVE);
+    var sy = window.scrollY, sx = window.scrollX, cut = sy - Math.max(40, vh * ABOVE);
+    st.docH = maxScroll() + vh;
     // everything that scrolled above the view is finished at once (no animation), its agents are free again
-    sweepAbove(st, cut);
+    sweepAbove(st, cut, sy, vh);
     if (t >= st.dispatchAt) {
       // video pacing: ~9.5 layers/s in the first part, ~7 on average
       var early = st.doneLayers < st.totalLayers * 0.3 ? 1.4 : 1;
@@ -1201,15 +1208,17 @@
       if (st.touring) st.dbg.dispatch(st, t); else dispatchFollow(st, t);
     }
     for (var i = st.active.length - 1; i >= 0; i--) {
-      var tk = st.active[i], bx = itemBox(tk.it);
+      var tk = st.active[i], bx = taskBox(tk);
       if (bx.y + bx.h < cut) { st.aboveSkips++; abortTask(st, tk, null); }
       else if (t - tk.wall0 > TASK_MAX) abortTask(st, tk, 'a task took longer than ' + TASK_MAX + ' s');
+      else if (!st.touring && (bx.y >= sy + vh || bx.y + bx.h <= sy)) { st.offSkips++; abortTask(st, tk, null); } // scrolled out of view: final at once, out of sight
       else {
-        // visitor scrolled far below this task: finish it quickly out of sight, the agent is needed in view
-        if (!st.touring && !tk.warp && bx.y > sy + vh * (1.25 + AHEAD)) tk.warp = 14;
+        // mostly out of view (the visitor scrolled on): the rest is fast-forwarded, the agent is needed in view
+        if (!st.touring && !tk.warp && visPart(bx.y, bx.h, sy, vh, st.docH) < st.vmin * 0.5) tk.warp = 6;
         st.cur = tk;
         try { runTask(st, tk, t); } catch (err) { abortTask(st, tk, err); }
         st.cur = null;
+        if (!st.touring && !tk.finished) keepInView(tk, sx, sy, vw, vh);
       }
       if (tk.finished) st.active.splice(i, 1);
     }
@@ -1225,28 +1234,39 @@
     if (st.touring) st.dbg.camera(st, t, dt, vw, vh);
     if (st.qHead >= st.queue.length && st.active.length === 0) enterDone(st, t);
   }
-  function sweepAbove(st, cut) {
-    if (cut <= 0) return;
+  // Above the view: everything more than the band above the top edge is final at once. In the visitor modes also
+  // what sits across the top edge with less than the start share in view (it can only leave the view now; building
+  // it would happen mostly out of sight), and copies of a running clone task that scrolled below the view.
+  function sweepAbove(st, cut, sy, vh) {
+    if (sy <= 0 && st.touring) return;
+    var thr = st.touring ? -1 : st.vmin, dh = st.docH;
+    function gone(y, h) { return y + h < cut || (y < sy && visPart(y, h, sy, vh, dh) < thr); }
     for (var k = st.qHead; k < st.queue.length; k++) {
       var it = st.queue[k];
       if (it.state === 'done') continue;
       var b = itemBox(it);
-      if (it.state === 'pending' && b.y + b.h < cut) { st.aboveSkips++; skipItem(st, it, true); continue; }
-      // clone group partly above: those copies are final at once, the rest keeps animating
-      if (it.type === 'clone' && b.y < cut) {
-        var ms = it.g.members, left = 0;
-        for (var mi = 0; mi < ms.length; mi++) { var m = ms[mi]; if (!m.done && m.R && m.R.y + m.R.h < cut) memberAbove(st, it, m); if (!m.done) left++; }
-        if (!left && it.state === 'pending') markItemDone(st, it);
+      if (it.type !== 'clone') {
+        if (it.state === 'pending' && gone(b.y, b.h)) { st.aboveSkips++; skipItem(st, it, true); }
+        continue;
       }
+      // clone group partly above: those copies are final at once, the rest keeps animating (or waits)
+      var ms = it.g.members, left = 0, tm = !st.touring && it.task && it.task.cl ? it.task.cl.members : null;
+      for (var mi = 0; mi < ms.length; mi++) {
+        var m = ms[mi];
+        if (!m.done && m.R && (b.y < sy && gone(m.R.y, m.R.h) || (tm && m.R.y >= sy + vh && tm.indexOf(m) >= 0))) memberAbove(st, it, m);
+        if (!m.done) left++;
+      }
+      if (!left && it.state === 'pending') markItemDone(st, it);
     }
     for (var j = 0; j < st.tails.length; j++) { var tl = st.tails[j]; if (!tl.shown && tl.b < cut) { tl.shown = true; revealEl(st, tl.el, true); } }
     for (var o = st.outs.length - 1; o >= 0; o--) if (st.outs[o].b < cut) { rm(st.outs[o].el); st.outs.splice(o, 1); }
   }
 
   // ------------------------------------------- visitor-driven (scroll / fast)
-  // Only layers in view and at most AHEAD viewport below it are built, never farther. Visible, unfinished layers
-  // come first; layers below only once everything visible is under way. Scrolling onto unbuilt layers raises the
-  // pace (more task starts, faster tasks), so nothing in view stays empty for long.
+  // Only what is in view is built: an element starts when at least st.vmin of it (of the viewport for taller ones)
+  // is on screen, in reading order, so a tall part is built from the top down as it comes into view. Nothing is
+  // built below or above the view. Scrolling onto unbuilt layers raises the pace (more task starts, more agents,
+  // faster tasks), so nothing in view stays empty for long.
   function itemBox(it) {
     if (it.type !== 'clone') return { y: it.y, h: it.h };
     var g = it.g, y0 = g.master.R.y, y1 = y0 + g.master.R.h;
@@ -1256,31 +1276,71 @@
     }
     return { y: y0, h: y1 - y0 };
   }
+  // the box a running task works on (a clone task: the copies it makes)
+  function taskBox(tk) {
+    var cl = tk.cl;
+    if (!cl) return itemBox(tk.it);
+    var y0 = 1e15, y1 = -1e15;
+    for (var i = 0; i < cl.members.length; i++) { var R = cl.members[i].R; if (!cl.members[i].done && R) { y0 = Math.min(y0, R.y); y1 = Math.max(y1, R.y + R.h); } }
+    return y1 < y0 ? itemBox(tk.it) : { y: y0, h: y1 - y0 };
+  }
+  // share of a box in view: of its height, or of the viewport for a box taller than it (only the part of the box
+  // that can be on screen at all counts, so an element cut off by the page edge is not held back)
+  function visPart(y, h, sy, vh, docH) {
+    var top = Math.max(y, 0), bot = Math.min(y + h, docH || 1e15);
+    var v = Math.min(bot, sy + vh) - Math.max(top, sy);
+    return v <= 0 ? 0 : Math.min(1, v / Math.max(1, Math.min(bot - top, vh)));
+  }
+  function itemVis(it, sy, vh, docH) {
+    if (it.type !== 'clone') return visPart(it.y, it.h, sy, vh, docH);
+    var best = 0, ms = it.g.members;
+    for (var i = 0; i < ms.length; i++) if (!ms[i].done && ms[i].R) best = Math.max(best, visPart(ms[i].R.y, ms[i].R.h, sy, vh, docH));
+    return best;
+  }
+  // what an item waits for: the frame of its layer, or the master card (and inner groups) of a clone group
+  function depsOf(it) {
+    var out = [];
+    if (it.type === 'build' && it.L.needsBlock && !it.L.blocked && it.L.blockItem) out.push(it.L.blockItem);
+    if (it.type === 'clone') {
+      it.g.layers.forEach(function (L) { if (L.item && L.item.state !== 'done') out.push(L.item); });
+      it.g.subgroups.forEach(function (sg) { if (sg.item && sg.item.state !== 'done') out.push(sg.item); });
+    }
+    return out;
+  }
+  // a working agent always stays on screen (a frame taller than the view is pulled from its edge)
+  function keepInView(tk, sx, sy, vw, vh) {
+    var list = tk.helpers.length ? tk.helpers.concat(tk.agent) : [tk.agent];
+    for (var i = 0; i < list.length; i++) {
+      var a = list[i];
+      a.x = clamp(a.x, sx + 10, sx + vw - 14); a.y = clamp(a.y, sy + 10, sy + vh - 14);
+    }
+  }
   function dispatchFollow(st, t) {
-    var sy = window.scrollY, vh = window.innerHeight, lim = sy + vh * (1 + AHEAD);
+    var sy = window.scrollY, vh = window.innerHeight, dh = st.docH, thr = st.vmin;
     var idle = [];
     for (var i = 0; i < st.agents.length; i++) { var a = st.agents[i]; if (a.active && !a.task) idle.push(a); }
     while (st.qHead < st.queue.length && st.queue[st.qHead].state === 'done') st.qHead++;
     var stamp = (st.stamp = (st.stamp || 0) + 1), cands = [], visPend = 0, visMan = 0;
-    function want(it, v, k) {
+    function want(it, k) {
       if (it.state !== 'pending' || it._c === stamp) return;
       it._c = stamp;
-      if (depsOk(it)) { cands.push({ it: it, v: v, k: k }); return; }
-      // pull in what it waits for, even outside the window (e.g. the master card scrolled above)
-      if (it.type === 'build' && it.L.blockItem) want(it.L.blockItem, v, k - 0.5);
-      if (it.type === 'clone') {
-        it.g.layers.forEach(function (L) { if (L.item) want(L.item, v, k - 0.5); });
-        it.g.subgroups.forEach(function (sg) { if (sg.item) want(sg.item, v, k - 0.5); });
-      }
+      if (depsOk(it)) { cands.push({ it: it, k: k }); return; }
+      // what it waits for is built first when it is in view as well; otherwise (mostly out of sight, e.g. the master
+      // card scrolled away) it is finished at once
+      depsOf(it).forEach(function (d) {
+        if (d.state !== 'pending') return;
+        if (itemVis(d, sy, vh, dh) >= thr) want(d, k - 0.5);
+        else { st.depSkips++; skipItem(st, d, true); }
+      });
     }
     for (var k = st.qHead; k < st.queue.length; k++) {
       var it = st.queue[k];
       if (it.state !== 'pending') continue;
       var b = itemBox(it);
-      if (b.y >= lim || b.y + b.h <= sy) continue;
-      var v = b.y < sy + vh;
-      if (v && it.type !== 'block') { visPend++; if (it.seen && it.seen.cat === 'manual') visMan++; }
-      want(it, v, k);
+      if (b.y >= sy + vh || b.y + b.h <= sy) continue;
+      if (itemVis(it, sy, vh, dh) < thr) continue; // not enough of it in view yet
+      if (it.type !== 'block') { visPend++; if (it.seen && it.seen.cat === 'manual') visMan++; }
+      want(it, k);
     }
     st.visPending = visPend;
     st.visManual = visMan;
@@ -1291,11 +1351,11 @@
       for (var e = before; e < st.activeAgents; e++) idle.push(st.agents[e]);
     }
     if (!idle.length || !cands.length) return;
-    cands.sort(function (p, q) { return (q.v - p.v) || (p.k - q.k); });
+    cands.sort(function (p, q) { return p.k - q.k; });
     var boost = clamp(visMan / 6, 1, 3); // and build them faster
     for (var c = 0; c < cands.length && idle.length; c++) {
-      var cd = cands[c], it2 = cd.it;
-      if (!cd.v && visPend > 0) break;
+      var it2 = cands[c].it;
+      if (it2.state !== 'pending') continue;
       if (it2.type !== 'block') { if (st.tokens < 1) break; st.tokens -= 1; }
       openSection(st, it2.section);
       var tx = it2.L ? it2.L.x : it2.g.master.R.x, best = 0, bd = 1e15;
@@ -1308,8 +1368,18 @@
       if (ag.y < sy - 80 || ag.y > sy + vh + 80) { ag.y = ag.py = ag.y < sy ? sy - 30 : sy + vh + 30; ag.vy = 0; ag.hist.length = 0; }
       var ahead = (itemBox(it2).y - (sy + vh)) / vh;
       if (ahead > st.maxAhead) st.maxAhead = ahead;
-      startTask(st, it2, ag, t, idle, cd.v ? boost : 1);
+      startTask(st, it2, ag, t, idle, boost);
+      if (it2.task) noteStart(st, it2.task, sy, vh);
     }
+  }
+  // measurement: how much of each part was in view when its animation started
+  function noteStart(st, tk, sy, vh) {
+    var it = tk.it, f;
+    if (tk.cl) { f = 1; tk.cl.members.forEach(function (m) { if (m.R) f = Math.min(f, visPart(m.R.y, m.R.h, sy, vh, st.docH)); }); }
+    else f = visPart(it.y, it.h, sy, vh, st.docH);
+    var sv = st.startVis;
+    sv.n++; sv.sum += f; if (f < sv.min) sv.min = f;
+    if (st.mlog) { st.mlog.starts.push({ type: it.type, kind: it.L ? it.L.kind : 'clone', vis: +f.toFixed(3), h: Math.round(it.h) }); if (st.mlog.starts.length > 1500) st.mlog.starts.shift(); }
   }
   function openSection(st, s) {
     if (st.sectionOpen[s]) return;
@@ -1325,6 +1395,7 @@
       if (L.ph) { L.ph.remove(); L.ph = null; }
       if (L.sel) { if (atOnce) L.sel.kill(); else L.sel.out(); L.sel = null; }
       L.blocked = false;
+      if (L.blockItem && L.blockItem.state === 'pending') { L.needsBlock = false; markItemDone(st, L.blockItem); }
       revealEl(st, L.el, L.tree);
       L.state = 'done';
       countDone(st, 1, it.section);
@@ -1659,8 +1730,9 @@
       {
         d: 0,
         start: function () {
-          L.ph = tk.ph; tk.ph = null; L.blocked = true;
-          L.sel = tk.sel; tk.sel = null; tk.guide = null;
+          if (L.state === 'done') { if (tk.ph) tk.ph.remove(); if (tk.sel) tk.sel.kill(); } // finished meanwhile (out of sight)
+          else { L.ph = tk.ph; L.blocked = true; L.sel = tk.sel; }
+          tk.ph = null; tk.sel = null; tk.guide = null;
           markItemDone(st, tk.it);
           release(st, tk.agent);
         }
@@ -1668,7 +1740,14 @@
     ];
   }
   function clonePhases(st, tk, g, idle) {
-    var M = g.master.R, members = g.members.filter(function (m) { return !m.done; }), n = members.length;
+    var M = g.master.R, members = g.members.filter(function (m) { return !m.done; });
+    if (!st.touring) {
+      // visitor modes: only the copies that are in view now; the others wait until they are
+      var sy = window.scrollY, vh = window.innerHeight;
+      var inv = members.filter(function (m) { return m.R && visPart(m.R.y, m.R.h, sy, vh, st.docH) >= st.vmin; });
+      if (inv.length) members = inv;
+    }
+    var n = members.length;
     var copies = [], sels = [], lines = [];
     tk.cl = { members: members, copies: copies, sels: sels, lines: lines };
     var slideD = (0.42 + 0.05 * (n - 1)) / tk.mw;
@@ -1784,17 +1863,23 @@
           });
         },
         end: function () {
-          markItemDone(st, tk.it);
+          cloneDone(st, tk.it);
           release(st, tk.agent);
         }
       }
     ];
   }
+  // a clone task made its copies: the group is done, or waits for its other copies to come into view
+  function cloneDone(st, it) {
+    if (it.state === 'done') return;
+    if (it.g.members.every(function (m) { return m.done; })) markItemDone(st, it);
+    else { it.state = 'pending'; it.task = null; progress(st); }
+  }
   // Complete a running task immediately: its part of the page becomes final.
   function completeTask(st, tk) {
     var it = tk.it;
     if (it.type === 'clone') {
-      it.g.members.forEach(function (m) { memberDone(st, it.g, m); });
+      (tk.cl ? tk.cl.members : it.g.members).forEach(function (m) { memberDone(st, it.g, m); });
     } else if (it.type === 'build') {
       revealEl(st, it.L.el, it.L.tree);
       it.L.state = 'done';
@@ -1803,7 +1888,7 @@
     }
     if (it.state !== 'done') {
       if (it.type === 'build') countDone(st, 1, it.section);
-      markItemDone(st, it);
+      if (it.type === 'clone') cloneDone(st, it); else markItemDone(st, it);
     }
     release(st, tk.agent);
     tk.helpers.forEach(function (h) { release(st, h); });
@@ -2208,11 +2293,25 @@
       controls: st.dbg ? { position: st.pos, collapsed: !!st.collapsed, corner: st.corner || null } : null,
       seen: st.seenStats, visiblePending: st.visPending || 0, maxAhead: +st.maxAhead.toFixed(3),
       waits: st.waits.length ? { n: st.waits.length, avg: +(st.waits.reduce(function (x, y) { return x + y; }, 0) / st.waits.length).toFixed(3), max: +Math.max.apply(null, st.waits).toFixed(3) } : null,
-      aboveSkips: st.aboveSkips, aborts: st.aborts, errors: st.errors, holes: (st.holes || []).length,
+      aboveSkips: st.aboveSkips, offSkips: st.offSkips, depSkips: st.depSkips, aborts: st.aborts,
+      buildVisible: st.vmin, startVis: st.startVis.n ? { n: st.startVis.n, min: +st.startVis.min.toFixed(3), avg: +(st.startVis.sum / st.startVis.n).toFixed(3) } : null,
+      inView: st.phase === 'build' ? inViewWork(st) : null, errors: st.errors, holes: (st.holes || []).length,
       lite: !!st.lite, liteFps: !!st.liteFps, mouseOn: !!st.mouseOn, focus: st.focusInfo, diff: st.diff || null, swarms: (st.swarms || []).map(function (s) { var c = 0; st.agents.forEach(function (a) { if (a.active && a.swarm === s) c++; }); return c; }),
       mouse: { dodges: st.mz.dodges, follows: st.mz.follows.length, minD: st.mz.minD, following: st.mfollow },
       fault: st.fault ? { kind: st.fault.kind, fired: st.fault.fired, task: st.fault.task || null } : null
     };
+  }
+  // test measurement: parts in view still to build (or being built), and tasks running outside the view
+  function inViewWork(st) {
+    var sy = window.scrollY, vh = window.innerHeight, dh = maxScroll() + vh, left = 0, off = 0;
+    for (var k = st.qHead; k < st.queue.length; k++) {
+      var it = st.queue[k];
+      if (it.state !== 'pending' || it.type === 'block') continue;
+      var b = itemBox(it);
+      if (b.y < sy + vh && b.y + b.h > sy && itemVis(it, sy, vh, dh) >= st.vmin) left++;
+    }
+    st.active.forEach(function (tk) { var b = taskBox(tk); if (b.y >= sy + vh || b.y + b.h <= sy) off++; else if (tk.it.type !== 'block') left++; });
+    return { left: left, offTasks: off };
   }
   function fpsStats(st) {
     var f = st.frames.slice(10);
@@ -2225,7 +2324,7 @@
 
   // what the debug add-on may use
   var core = {
-    version: VERSION, api: api, AHEAD: AHEAD, ABOVE: ABOVE,
+    version: VERSION, api: api, ABOVE: ABOVE, visPart: visPart, taskBox: taskBox,
     now: now, clamp: clamp, lerp: lerp, rand: rand, mk: mk, rm: rm, alphaOf: alphaOf, store: store, warn: warn,
     state: function () { return S; }, finishNow: finishNow, replay: replay, skipItem: skipItem, startTask: startTask,
     depsOk: depsOk, itemBox: itemBox, maxScroll: maxScroll, growAgents: growAgents, openSection: openSection, settled: settled,

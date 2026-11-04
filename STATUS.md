@@ -62,6 +62,42 @@ Working notes so that work can continue after a context reset. Keep this file cu
 - (1.2) Idle swarms during the build settle when they arrive and agents at rest are not rewritten; motion trails only
   for agents at work. Reason: constant micro-motion of idle agents cost ~1 fps on the dental page without a GPU.
 
+## Task 4 (night run, unattended): progress
+
+Order A, B, C, D, E, F, G, H; commit + push after every block. Full suite only once at the very end.
+
+| block | state | notes |
+|---|---|---|
+| A visible-only build (scroll mode) | done | `buildVisible` 0.6; verify group `visible` |
+| B idle agents never cluster | next | |
+| C language support | open | |
+| D legacy backup | open | |
+| E one-command removal | open | |
+| F many realistic test pages | open | |
+| G perf / SEO / a11y / minified build | open | |
+| H extras | open | |
+
+### Decisions (task 4)
+
+- (A) Start share `buildVisible` = 0.6 of the element's height (of the viewport for taller ones; only the part that
+  can be on screen at all counts, so an element cut off by the page edge is not held back). Measured on the demo with
+  0.5 / 0.6 / 0.7 / 0.8: same build time (9.1-9.3 s), starts 54-100 % / 61-100 % / 71-100 % / 92-100 % in view; 0.6
+  keeps the bottom edge empty the shortest while still never starting a part that is mostly off screen.
+- (A) An unbuilt part across the top edge with less than the start share in view is finished at once (it can only
+  leave the view: building it would happen mostly out of sight; the user asked to keep instant completion for what is
+  missed at the top).
+- (A) Running tasks: completely out of view -> completed at once (also below the view when the visitor scrolls up);
+  less than half the start share in view -> fast-forwarded (x6). Working agents are clamped into the screen (a frame
+  taller than the screen is pulled from its edge) - so "no working agent off screen" holds by construction; verify
+  still measures it from outside, at the scroll position each frame was drawn for.
+- (A) Rows of copies (clone groups): a clone task copies only the members in view; the item goes back to pending and
+  makes the other copies when they come into view. What a visible part waits for (master card, frame) is built first
+  if it is in view too, else finished at once (otherwise a half-visible master card could block its visible copies).
+- (A) The debug tour (auto-scroll, recordings only) is unchanged: its camera brings the next part into view by itself,
+  and the visibility rule there could stall it (the camera puts the next tall part only 56 % into view).
+- (A) 1.2.0 measured with the same probe (demo desktop, reading down): 58 of 120 starts under 60 % in view (many at
+  0 %), working agents off screen in 42 % of the samples. 1.3: 0 starts under 60 %, 0 off screen.
+
 ## Done (1.2.0, 2026-11-04)
 
 - Task 3 (natural motion), sections A–E: swarms around a focus element, spring finale, mouse play, gravity sag,

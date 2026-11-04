@@ -33,7 +33,9 @@ and this file disagree, this file wins (product decisions were made after the de
 
 ## Product decisions (they override the reference video)
 
-- **Main mode is `scroll`** (the default): the build follows the visitor's scrolling; agents work on what is in view.
+- **Main mode is `scroll`** (the default): the build follows the visitor's scrolling, and only what is in view is ever
+  built: an element starts when at least 60 % of it is on screen (`buildVisible`), nothing is built below or above the
+  view, and no working agent ever leaves the screen.
 - **Visitors never see a control bar and never get an automatic scroll.** The bar and the tour live in the debug
   add-on, loaded only with `?rebuild-debug=1` or `debug: true`. `mode: 'tour'` without the add-on falls back to
   `scroll`.
@@ -57,7 +59,7 @@ and this file disagree, this file wins (product decisions were made after the de
 
 | mode | speed | behaviour |
 |---|---|---|
-| `scroll` (default) | 3x | No auto-scroll. Agents build only what is in view and at most 0.5 viewport height below it. When the visitor scrolls onto unbuilt layers, those start first, more agents join (up to 8 above plan) and tasks run faster. What scrolls above the view is finished at once (see Protection). At the bottom, whatever is left above is finished out of sight. |
+| `scroll` (default) | 3x | No auto-scroll. Agents build only what is in view: an element starts when at least `buildVisible` (60 %) of its height is on screen; an element taller than the screen when it fills 60 % of the screen, so it is built from the top down as it comes in. Nothing is built outside the view and a working agent never leaves it (a frame taller than the screen is pulled from the screen edge). After a fast scroll (wheel, keys, Home / End) the visible part is filled in ~1-2 s: those layers start first, more agents join (up to 8 above plan) and tasks run faster. What leaves the view is final at once (see Protection). |
 | `fast` | 6x | Same as `scroll`, twice as fast. |
 | `tour` (debug only) | 1x | Auto-scroll as in the reference video: ~layers/7 seconds, the camera follows the work front, ends at the bottom with the ring of cursors. For recordings and side-by-side checks. `?rebuild-speed=6` gives the old "fast" (a 6x auto-scroll, ~9 s on the demo). Manual scrolling hands over to the visitor; the bar's `Tour` button resumes. |
 
@@ -101,7 +103,12 @@ A/B tests (debug add-on).
 
 - **Above the view:** everything that scrolls more than 0.1 viewport (min. 40 px) above the top edge is put in its final
   state at once, without animation; running tasks there are completed and their agents get new work. The band keeps
-  things that are still visible from jumping. Copies of a clone group are handled one by one.
+  things that are still visible from jumping. Copies of a clone group are handled one by one. In the visitor modes also
+  an unbuilt element across the top edge with less than `buildVisible` of it in view is final at once (it can only
+  leave the view; building it would happen mostly out of sight).
+- **Out of view (visitor modes):** a running task whose part scrolled completely out of view (also below it, when the
+  visitor scrolls back up) is completed at once; one mostly out of view is fast-forwarded. Something a visible part
+  waits for (the master card of a row of copies, a frame) is built first when it is in view too, else finished at once.
 - **Errors and stuck work:** an exception in a task completes just that part; a task running longer than 8 s is
   completed by a watchdog; an exception elsewhere, a frame loop that stopped (2.5 s without a frame while the tab is
   visible), a scan that does not finish (6 s) or no progress for 10 s while layers in view wait show the whole page.
@@ -204,6 +211,7 @@ Working example: `tests/pages/nextjs/`.
 | `debugSrc` | next to the module | URL of `swarm-rebuild-debug.js` (script-tag installs) |
 | `controlsPosition` | `'right'` | debug bar: `'right'` \| `'left'` \| `'bottom'`; collapses to a thin tab when it would cover content; mobile: a small tab in a free corner |
 | `avoid` | `a[href^="tel:"],a[href^="mailto:"],button,[role="button"],input,select,textarea,[data-swarm-avoid]` | mobile debug tab never covers these (nor fixed elements and button-like links) |
+| `buildVisible` | `0.6` | scroll / fast: share of an element (of the screen for taller ones) that must be in view before it starts (0.1..1). Measured: every start 60-100 % in view (median 100 %), the same build time with 0.5..0.8; higher values leave a part at the bottom edge empty longer while the visitor rests |
 | `focus` | `null` (auto) | selector or element the opening / finale swarms gather around (see Motion); ask the developer |
 | `motion` | see below | merged key by key: `swarms` (true), `mouse` (true), `arc` (1 = gravity sag, 0 = straight), `difficulty` (1, 0 = all tasks alike), `spring` (1 = finale overshoot, 0 = none), `lite` (`'auto'` \| true \| false) |
 | `onDone` | `null` | callback `{elapsed, layers, agents}` or `{skipped: true, reason}` |
@@ -211,7 +219,7 @@ Working example: `tests/pages/nextjs/`.
 URL parameters: `?rebuild=1` (force), `?rebuild=0` (off), `?rebuild-mode=scroll|fast|tour`, `?rebuild-debug=1`
 (debug add-on). With the debug add-on only: `?rebuild-speed=<n>`, `?rebuild-fault=task|stall|loop|die@<s>` (fault
 injection for tests), `?rebuild-hidden-max=<s>`, `?rebuild-motion=arc:0,difficulty:0,mouse:false,lite:true` (motion
-A/B), `?rebuild-focus=<selector>`.
+A/B), `?rebuild-focus=<selector>`, `?rebuild-visible=<share>`.
 API: `SwarmRebuild.skip()`, `.goLive()`, `.replay()`, `.stop()`, `.state()` (`phase` scan / build / done, `loading`
 while the debug add-on is fetched, `idle` with `lastExit` after the end),
 `.stats()`, `.headSnippet()`, `.defaults`, `.version`; test hooks `._pause(on)`, `._probe()` and `._motion()` (debug
@@ -234,13 +242,15 @@ default mode scroll, scroll keys scroll and drive the build, Esc / letter / Tab 
 once without layout shift while a lone Shift does not, a click
 or tap on unfinished content ends it without navigating, a click on finished content (`--interact`) works and ends it),
 `protect` (everything above the view final during fast scrolling, faults `task` / `stall` / `loop` / `die`, resize,
-background tab), `fixed` (pixel test: overlay shown vs. hidden, module paused, at ~17 moments of a visitor run, for every
+background tab), `visible` (scroll mode builds only what is in view: every start >= `buildVisible` in view, no
+working agent outside the view, no task out of view, fill time after wheel bursts / Page Down / End <= 2 s on average,
+contact sheet `sheet-visible.jpg`), `fixed` (pixel test: overlay shown vs. hidden, module paused, at ~17 moments of a visitor run, for every
 fixed and finished sticky element in view), `motion` (opening swarms around the focus with changing speed and no
 perfect circle, the finale's spring pull with overshoot and slow circling, mouse play on desktop: dodge, never closer than
 36 px, shorter follows when the pointer leaves faster, moves do not end the effect; gravity sag of horizontal moves and
 none of vertical ones; difficulty: bigger parts take longer, at most ~4x; contact sheets `sheet-opening.jpg` /
 `sheet-finale.jpg`), `manual` (debug tour interrupted by wheel scrolling, then a scroll-mode run),
-`all` = record,extra,product,protect,fixed,motion. `--interact "<selector>"` also clicks an element after the effect and
+`all` = record,extra,product,protect,fixed,visible,motion. `--interact "<selector>"` also clicks an element after the effect and
 expects its text to change (e.g. a React counter). Every run has a hard time limit (`--timeout`, default 400 s).
 
 All checks must pass: run to the end, monotonic counters, auto-scroll ends at the bottom (tour), fps >= `--min-fps`
@@ -288,8 +298,9 @@ off (`?rebuild=0`, remove the snippet + script).
   typing, the untyped rest of each text node is kept as hidden text, so every word already sits in its final line (no
   reflow, no layout shift inside the overlay).
 - **Scheduler**: per section, big frames are blocked first, then reading order; a token bucket keeps ~7 layers/s x
-  speed; the nearest idle agent takes the next task. Visitor-driven: only the view + 0.5 viewport below; visible
-  unbuilt layers first; an agent far off screen enters from the nearest edge. Tour (debug): the camera keeps the lowest
+  speed; the nearest idle agent takes the next task. Visitor-driven: only layers with >= `buildVisible` in view (a row
+  of copies: only the copies in view, the rest later); an agent far off screen enters from the nearest edge; working
+  agents are kept on screen. Tour (debug): the camera keeps the lowest
   active layer in the lower third (base 0.09 viewport heights/s x speed, up to 3x when the next section's frames reach
   the bottom edge).
 - **Motion**: free agents = damped springs (semi-implicit Euler, sub-steps of 17 ms) towards places in swarms; task
