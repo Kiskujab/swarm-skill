@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixel &amp; Pine Studio</title>
+<!-- Fictional test page for page-swarm-rebuild: a single-page app (client-side routes with history.pushState, content
+     rendered by JavaScript, a block that arrives later), a background video in the hero, an embedded video player
+     (iframe) and an inline video. -->
+<script>(function(d,w){w.__swarmRebuildSnippet=1;try{var q=new URLSearchParams(location.search).get('rebuild');if(q==='0')return;if(w.matchMedia&&w.matchMedia('(prefers-reduced-motion: reduce)').matches)return;if(q!=='1'&&sessionStorage.getItem('swarm-rebuild:seen'))return;var s=d.createElement('style');s.id='swarm-rebuild-hide';s.textContent='@layer swarm-rebuild{body *{visibility:var(--sr-v,hidden)!important}#swarm-rebuild-root{opacity:var(--sr-o,1)!important}}';d.head.appendChild(s);try{w.__srDms=d.documentElement.animate([{'--sr-v':'visible','--sr-o':'0'}],{duration:1,delay:5000,fill:'forwards'})}catch(e){}setTimeout(function(){var r=w.SwarmRebuild;if(!(r&&r.active)){var e=d.getElementById('swarm-rebuild-hide');if(e)e.remove()}},5000)}catch(e){}})(document,window);</script>
+<link rel="stylesheet" href="../../../assets/swarm-rebuild.css">
+<style>
+  :root { --ink: #f3f1ea; --muted: #b9b4a6; --bg: #14171a; --card: #1d2125; --acc: #e9b949; --line: #2c3238; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--bg); }
+  a { color: var(--acc); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  header { border-bottom: 1px solid var(--line); }
+  header .wrap { display: flex; align-items: center; gap: 22px; height: 68px; }
+  .logo { font-weight: 800; font-size: 19px; color: var(--ink); text-decoration: none; margin-right: auto; }
+  header nav a { color: var(--muted); text-decoration: none; margin-left: 18px; }
+  header nav a[aria-current="page"] { color: var(--acc); }
+  .cart { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 14px; cursor: pointer; }
+  .hero { position: relative; overflow: hidden; min-height: 520px; display: flex; align-items: center; }
+  .hero video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .55; }
+  .hero .wrap { position: relative; }
+  .hero h1 { font-size: 56px; line-height: 1.08; margin: 0 0 16px; max-width: 760px; }
+  .hero p { font-size: 20px; color: #e1ddd2; max-width: 600px; }
+  .btn { display: inline-block; padding: 12px 22px; border-radius: 10px; background: var(--acc); color: #1a1a1a; text-decoration: none; font-weight: 700; }
+  section { padding: 80px 0; }
+  h2 { font-size: 34px; margin: 0 0 12px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-top: 28px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
+  .tile p { color: var(--muted); margin: 0; }
+  .media { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 26px; }
+  .media iframe, .media video { width: 100%; aspect-ratio: 16 / 9; height: auto; border: 0; border-radius: 12px; display: block; background: #000; }
+  .later { background: var(--card); border: 1px dashed var(--line); border-radius: 14px; padding: 22px; margin-top: 28px; }
+  footer { border-top: 1px solid var(--line); padding: 36px 0 80px; color: var(--muted); font-size: 14px; }
+  @media (max-width: 759px) { header nav { display: none; } .hero h1 { font-size: 36px; } .grid, .media { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header><div class="wrap"><a class="logo" href="./" data-route="/">Pixel &amp; Pine</a><nav><a href="#work" data-route="/work">Work</a><a href="#services" data-route="/services">Services</a><a href="#contact" data-route="/contact">Contact</a></nav><button class="cart" id="cart" type="button">Brief list (0)</button></div></header>
+<div id="app"></div>
+<footer><div class="wrap">Pixel &amp; Pine Studio — fictional test page (a single-page app)</div></footer>
+<script>
+  // a tiny client-side router: every route is rendered by JavaScript (like a React / Vue app without a framework)
+  (function () {
+    var app = document.getElementById('app'), n = 0;
+    var views = {
+      '/': '<section class="hero"><video src="media/bg.webm" autoplay muted loop playsinline aria-hidden="true"></video><div class="wrap"><h1>Brand films and websites for small teams</h1><p>We plan, shoot and build in four weeks. One studio, one invoice.</p><p><a class="btn" id="start" href="#contact" data-route="/contact">Start a project</a></p></div></section>' +
+        '<section><div class="wrap"><h2>Selected work</h2><div class="grid"><div class="tile"><h3>Harbor Bakery</h3><p>Launch film and online shop.</p></div><div class="tile"><h3>Riverside Bikes</h3><p>Brand refresh and booking site.</p></div><div class="tile"><h3>Tilde Coffee</h3><p>Social clips for twelve months.</p></div></div>' +
+        '<div class="media"><iframe src="player.html" title="Showreel" loading="lazy"></iframe><video src="media/clip.webm" muted loop playsinline controls aria-label="Behind the scenes"></video></div><div id="later"></div></div></section>',
+      '/work': '<section><div class="wrap"><h2>Work</h2><p>Case studies are coming soon.</p></div></section>',
+      '/services': '<section><div class="wrap"><h2>Services</h2><div class="grid"><div class="tile"><h3>Film</h3><p>Concept, shoot, edit.</p></div><div class="tile"><h3>Web</h3><p>Design and build.</p></div><div class="tile"><h3>Social</h3><p>Monthly clips.</p></div></div></div></section>',
+      '/contact': '<section id="contact"><div class="wrap"><h2>Contact</h2><p>Call <a href="tel:+15550133000">+1 555 0133 000</a> or write to <a href="mailto:hi@example.invalid">hi@example.invalid</a>.</p></div></section>'
+    };
+    var base = location.pathname.replace(/[^/]*$/, '');
+    function render(route) {
+      app.innerHTML = views[route] || views['/'];
+      document.querySelectorAll('header nav a').forEach(function (a) { if (a.getAttribute('data-route') === route) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+      if (route === '/') setTimeout(function () { var l = document.getElementById('later'); if (l) l.innerHTML = '<div class="later"><b>Client note</b> (arrived after the page): “On time and on budget.” — Harbor Bakery (fictional)</div>'; }, 300);
+    }
+    document.addEventListener('click', function (e) {
+      var a = e.target.closest && e.target.closest('[data-route]');
+      if (!a || e.defaultPrevented) return;
+      e.preventDefault();
+      var r = a.getAttribute('data-route');
+      history.pushState({ r: r }, '', base + (r === '/' ? '' : '?page=' + r.slice(1)) + (location.search.indexOf('rebuild') >= 0 ? '' : ''));
+      render(r);
+    });
+    window.addEventListener('popstate', function (e) { render((e.state && e.state.r) || '/'); });
+    document.getElementById('cart').addEventListener('click', function () { n++; this.textContent = 'Brief list (' + n + ')'; });
+    var p = new URLSearchParams(location.search).get('page');
+    render(p ? '/' + p : '/');
+  })();
+</script>
+<script src="../../../assets/swarm-rebuild.js" data-auto data-focus="#start"></script>
+</body>
+</html>

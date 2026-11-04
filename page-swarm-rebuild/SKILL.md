@@ -25,6 +25,7 @@ and this file disagree, this file wins (product decisions were made after the de
 | `tests/index.html` | Links to every test page in every mode (also the GitHub Pages start page). |
 | `tests/pages/dental/` | Fictional dental practice: light theme, phone links, fixed "Call us" + booking bar (mobile), fixed notice (desktop). |
 | `tests/pages/lang-*/` | Fictional pages in Hungarian, Arabic (right to left), Japanese and an emoji-rich one (typing in any language). |
+| `tests/pages/law/`, `accounting/`, `bootstrap/`, `spa/` | Fictional real-world patterns: web fonts, sticky header, consent banners, iframe, lazy images, dark mode, long page, scroll-reveal, Bootstrap (npm), single-page app, videos. |
 | `tests/pages/nextjs/` | Fictional Next.js 15 App Router app: React counter (hydration check), fixed Help button. |
 | `scripts/verify.cjs` | Playwright check of one page (see step 4). |
 | `scripts/run-tests.cjs` | Runs `verify.cjs` on the three test pages, desktop and mobile; prints a summary table. |
@@ -120,6 +121,32 @@ left to right (`direction: ltr` on its root) so a right-to-left page never mirro
 (`\p{Nd}`) count as numbers. Test pages: `tests/pages/lang-hu` (ő / ű, very long words), `lang-ar` (right to left,
 Arabic-Indic digits, a Hebrew quote), `lang-ja` (Japanese), `lang-emoji`. Known limit: vertical writing modes
 (`writing-mode: vertical-rl`) are typed but the frames still grow left to right.
+
+## Compatibility (tested on the local test pages; real sites cannot be reached from the test machine)
+
+| pattern | result | what to know |
+|---|---|---|
+| Plain HTML, multi-page sites | works | installer adds the snippet / script to every page |
+| Next.js App Router, Pages Router | works | test app built and verified; StrictMode-safe |
+| React + Vite | works (installer tested, page not built here) | own detached root, starts after mount |
+| Bootstrap 5 (npm), utility CSS | works | `tests/pages/bootstrap` |
+| Single-page apps (client routes) | works on the first view | content rendered before the scan is built; content added later is shown at once; a route change is a click, so it ends the effect; more than 300 added nodes end it too |
+| Sticky header | works | built first, then cut out of the overlay |
+| Fixed bars, chat bubbles, back-to-top | works | shown at once, never covered (pixel-tested) |
+| Cookie / consent banners (static or added by a script later) | works | shown at once, never covered, the first click works and ends the effect (`--consent` check) |
+| Web fonts (`@font-face`) | works | the scan waits for `document.fonts.ready` (at most 0.7 s) |
+| Lazy-loaded images | works | sizes come from the layout; give images `width` / `height` (the page itself needs them against layout shift anyway) |
+| iframes (maps, players), `<video>`, background video | works | revealed as one picture, their content is not animated; videos keep playing underneath |
+| Carousels, tabs, menus, modals, accordions | works | parts not shown at the scan (`display: none`) are final at once, so a slide that comes in during the build is complete |
+| Scroll-reveal libraries (AOS-like, opacity 0 until in view) | works | sections in the page flow are built like the rest (the page fades them in about when they are built); small or floating ones at opacity 0 (tooltips) are final at once |
+| Dark mode (system setting, toggle) | works | the overlay takes the page background; verify with `--color-scheme dark` |
+| Very long pages | works | demo 6.6, accounting 6.8, law (phone) 8.3 viewport heights |
+| Right-to-left, CJK, emoji, any language | works | see Languages |
+| Inner scroll containers (app shells, chat panes) | limited | only the window scroll is followed: use `fast`, or `exclude` the container |
+| Canvas / WebGL scenes | limited | revealed as one picture, not animated |
+| Web components (shadow DOM) | limited | hidden and shown with their host element, the inside is not animated piece by piece |
+| Pages that move or change their own DOM all the time (tickers, live counters) | limited | works, but "DOM identical" checks need `--dom-volatile` for the changing attributes |
+| Vertical writing modes | limited | text is typed, frames still grow horizontally |
 
 ## Protection (the page is never left half hidden)
 
@@ -291,6 +318,9 @@ node $S/scripts/verify.cjs --url http://localhost:3000/ --mode scroll --checks r
 # video timing + side-by-side with a reference video (optional):
 node $S/scripts/verify.cjs --url http://localhost:3000/ --mode tour --checks record --video ref.mp4
 ```
+Other verify options: `--consent "<selector>"` (a consent banner's button must work at the first click during the
+build), `--color-scheme dark`, `--dom-volatile "class,style"` (attributes the page changes by itself), `--settle "<js>"`
+(stop a carousel before the "looks identical" screenshots; videos are always paused at their first frame).
 `--checks` (comma list): `record` (one recorded run in `--mode`), `extra` (reduced motion, debug ✕ and Replay, no-JS),
 `product` (no bar / no auto-scroll / add-on not loaded without the flag in all three modes, the flag shows the bar,
 default mode scroll, scroll keys scroll and drive the build, Esc / letter / Tab / Enter / Ctrl+arrow end the effect at

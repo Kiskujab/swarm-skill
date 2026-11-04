@@ -5,7 +5,8 @@
  *   node verify.cjs --url http://localhost:5500/ [--mode scroll|fast|tour] [--speed 6] [--out ./swarm-check]
  *                   [--device desktop|mobile] [--viewport 1440x900] [--fps 10]
  *                   [--checks all|record|extra|product|protect|fixed|visible|text|motion|manual (comma list)]
- *                   [--interact "<selector>"] [--min-fps 50] [--timeout 400] [--video ref.mp4 --crop 930:500:90:690]
+ *                   [--interact "<selector>"] [--consent "<selector>"] [--color-scheme dark|light] [--settle "<js>"]
+ *                   [--min-fps 50] [--timeout 400] [--video ref.mp4 --crop 930:500:90:690]
  *
  * --mode / --speed   the recorded run. scroll and fast are what visitors get (no control bar, the page follows
  *                    their scrolling, simulated here by reading down with the mouse wheel). tour is the debug
@@ -34,6 +35,15 @@
  *            vertical ones), task difficulty (bigger = longer, at most ~4x); contact sheets of the opening and finale
  *   manual   the visitor takes over: a debug tour interrupted by wheel scrolling, then a scroll-mode run
  *   all      record,extra,product,protect,fixed,visible,text,motion
+ *
+ * --consent  the accept button of a cookie / consent banner (also one a script adds later): clicked during the build,
+ *            it must work at the first click (the banner goes away) and the effect ends
+ * --color-scheme  emulate the system's dark or light mode
+ * --dom-volatile  attributes the page changes by itself over time (e.g. "class,style,aria-current" for a carousel or
+ *            scroll-reveal classes): left out of the "DOM identical" comparisons. The reference page (effect off) is
+ *            always scrolled once to the bottom and back first, so lazy images and scroll-reveal parts are loaded
+ * --settle   JavaScript run in the page before the "looks identical" screenshots (e.g. stop a carousel); videos are
+ *            always paused at their first frame for those screenshots
  *
  * Frame rate is measured in a separate run without screenshots. It depends on the machine: a cloud
  * container without a GPU reaches ~46-55 fps with the demo where a normal laptop reaches ~59, so lower
@@ -103,10 +113,13 @@ function firstDiff(a, b) {
   while (i < n && a.charCodeAt(i) === b.charCodeAt(i)) i++; // bounded: stops at the shorter string
   return i;
 }
-function domSame(dom, baseDom) { return dom === baseDom; }
+const VOLATILE = args['dom-volatile'] && args['dom-volatile'] !== true ? new RegExp('\\s(?:' + String(args['dom-volatile']).split(',').map((a) => a.trim().replace(/[^\w-]/g, '')).join('|') + ')="[^"]*"', 'g') : null;
+const normDom = (d) => (VOLATILE && d ? d.replace(VOLATILE, '') : d);
+function domSame(dom, baseDom) { return normDom(dom) === normDom(baseDom); }
 function domCheck(name, dom, baseDom) {
   const same = domSame(dom, baseDom);
-  const di = same ? 0 : firstDiff(baseDom, dom);
+  const di = same ? 0 : firstDiff(normDom(baseDom), normDom(dom));
+  dom = normDom(dom);
   check(name, same, same ? '' : 'first difference: …' + JSON.stringify(dom.slice(Math.max(0, di - 60), di + 40)));
 }
 
@@ -146,7 +159,7 @@ function watchConsole(page, bag) {
 }
 const STATE = () => window.SwarmRebuild ? window.SwarmRebuild.state() : { phase: 'not-loaded' };
 const gone = () => ({ root: !!document.getElementById('swarm-rebuild-root'), hide: !!document.getElementById('swarm-rebuild-hide'), reveal: !!document.getElementById('swarm-rebuild-reveal'), dom: document.body.outerHTML, s: window.SwarmRebuild ? window.SwarmRebuild.state() : null, cls: window.__cls });
-const isFinished = (g, baseDom) => !g.root && !g.hide && !g.reveal && g.dom === baseDom;
+const isFinished = (g, baseDom) => !g.root && !g.hide && !g.reveal && domSame(g.dom, baseDom);
 // per-element visibility, in document order (the page loaded with the effect off is the reference)
 const VIS_MAP = () => Array.from(document.body.querySelectorAll('*')).map((e) => getComputedStyle(e).visibility.charAt(0)).join('');
 
@@ -216,7 +229,7 @@ function fixedTargets() {
   const { chromium } = loadPlaywright();
   browser = await chromium.launch();
   const newCtx = (o = {}) => browser.newContext(Object.assign(
-    { viewport: { width: VW, height: VH }, deviceScaleFactor: 1 },
+    { viewport: { width: VW, height: VH }, deviceScaleFactor: 1 }, args['color-scheme'] ? { colorScheme: String(args['color-scheme']) } : {},
     MOBILE ? { isMobile: true, hasTouch: true } : {}, o));
   const report = { url: args.url, mode: MODE, speed: SPEED, device: MOBILE ? 'mobile' : 'desktop', viewport: [VW, VH], checks: [...CHECKS] };
   // opens a page with the effect; waits until the build runs (or the given phase)
@@ -251,13 +264,27 @@ function fixedTargets() {
     await page.waitForFunction(() => window.SwarmRebuild && window.SwarmRebuild.state().phase === 'idle', null, { timeout: ms }).catch(() => {});
   }
 
+  // the page's own moving parts are stopped for the "looks identical" screenshots: videos at their first frame,
+  // plus whatever --settle does (e.g. a carousel back to its first slide)
+  async function stillPage(page) {
+    await page.evaluate(async (settle) => {
+      const vids = Array.from(document.querySelectorAll('video'));
+      await Promise.all(vids.map((v) => new Promise((res) => { try { v.pause(); if (v.currentTime === 0) return res(); v.addEventListener('seeked', res, { once: true }); v.currentTime = 0; setTimeout(res, 1500); } catch (e) { res(); } })));
+      if (settle) { try { (0, eval)(settle); } catch (e) { /* ignore */ } }
+    }, args.settle && args.settle !== true ? String(args.settle) : null).catch(() => {});
+    if (args.settle) await page.waitForTimeout(900);
+  }
   // ---------- baseline (effect disabled)
   const base = await newCtx();
   const bp = await base.newPage();
   await bp.goto(withParams(args.url, { rebuild: '0' }), { waitUntil: 'load' });
-  await bp.waitForTimeout(600);
+  await bp.waitForTimeout(400);
+  // read the page once like a visitor (lazy images, scroll-reveal parts), then back to the top
+  await bp.evaluate(async () => { const st = Math.max(200, innerHeight * 0.8); for (let y = 0; y < document.documentElement.scrollHeight; y += st) { scrollTo(0, y); await new Promise((r) => setTimeout(r, 70)); } scrollTo(0, 0); });
+  await bp.waitForTimeout(700);
   const baseDom = await bp.evaluate(() => document.body.outerHTML);
   const baseVis = await bp.evaluate(VIS_MAP);
+  await stillPage(bp);
   const baseShot = await bp.screenshot({ fullPage: true, caret: 'initial' });
   fs.writeFileSync(path.join(OUT, 'baseline.png'), baseShot);
   const docInfo = await bp.evaluate(() => ({ h: document.documentElement.scrollHeight, vh: innerHeight }));
@@ -357,6 +384,7 @@ function fixedTargets() {
     check('no layout shift (CLS < 0.01)', after.cls < 0.01, 'CLS ' + after.cls.toFixed(4));
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
     await page.waitForTimeout(200);
+    await stillPage(page);
     const afterShot = await page.screenshot({ fullPage: true, caret: 'initial' });
     fs.writeFileSync(path.join(OUT, 'after.png'), afterShot);
     const d1 = await pixelDiff(page, b64(baseShot), b64(afterShot));
@@ -433,13 +461,17 @@ function fixedTargets() {
     const np = await nc.newPage();
     await np.goto(args.url, { waitUntil: 'load' });
     await np.waitForTimeout(400);
+    await np.evaluate(() => document.querySelectorAll('video').forEach((v) => { try { v.pause(); v.currentTime = 0; } catch (e) { /* ignore */ } })).catch(() => {});
+    await np.waitForTimeout(300);
     const noJsShot = await np.screenshot({ fullPage: true, caret: 'initial' });
     fs.writeFileSync(path.join(OUT, 'nojs.png'), noJsShot);
+    const nj = await np.evaluate(() => ({ dom: document.body.outerHTML, traces: !!document.getElementById('swarm-rebuild-hide') || !!document.getElementById('swarm-rebuild-root') })).catch(() => ({ dom: '', traces: false }));
     await nc.close();
     const cc = await newCtx();
     const cmp = await cc.newPage();
     const d2 = await pixelDiff(cmp, b64(baseShot), b64(noJsShot));
-    check('page visible without JavaScript', d2.ratio < 0.02, (d2.ratio * 100).toFixed(2) + ' % differs from the JS baseline');
+    if (domSame(nj.dom, baseDom) || d2.ratio < 0.02) check('page visible without JavaScript', d2.ratio < 0.02 && !nj.traces, (d2.ratio * 100).toFixed(2) + ' % differs from the JS baseline');
+    else check('page visible without JavaScript (the page renders its content with JavaScript itself: nothing of the effect may hide it)', !nj.traces, 'without JavaScript the page has other content (' + (d2.ratio * 100).toFixed(0) + ' % differs, e.g. a single-page app); hiding style / overlay present: ' + nj.traces);
     await cc.close();
   }
 
@@ -523,6 +555,22 @@ function fixedTargets() {
       const sameUrl = page.url() === urlBefore;
       check('product: ' + (MOBILE ? 'a tap' : 'a click') + ' on unfinished content shows the page and does not navigate', g && isFinished(g, baseDom) && sameUrl && !popup && g.cls < 0.01,
         (pt ? 'hit the spot of hidden ' + pt.what : 'no hidden link in view, clicked the middle') + ', url ' + (sameUrl ? 'unchanged' : 'changed to ' + page.url()) + ', exit ' + (g && g.s && g.s.lastExit));
+      await ctx.close();
+    }
+    if (args.consent) {
+      // a cookie / consent banner: its button works at the first click during the build, and the effect ends
+      const sel = String(args.consent);
+      const { ctx, page } = await openEffect('scroll', { after: 0.3 });
+      const seen = await page.waitForFunction((s) => { const e = document.querySelector(s); if (!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && getComputedStyle(e).visibility === 'visible'; }, sel, { timeout: 8000 }).then(() => true).catch(() => false);
+      const s0 = await page.evaluate(STATE);
+      const box = seen ? await (await page.$(sel)).boundingBox() : null;
+      const urlBefore = page.url();
+      if (box) { if (MOBILE) await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2); else await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); }
+      await page.waitForTimeout(400);
+      const r = await page.evaluate((s) => { const e = document.querySelector(s); const vis = !!e && e.getBoundingClientRect().width > 0 && getComputedStyle(e).display !== 'none' && !!e.offsetParent; return { vis, st: window.SwarmRebuild.state(), cls: window.__cls }; }, sel);
+      check('product: the consent banner works at the first ' + (MOBILE ? 'tap' : 'click') + ' during the build (' + sel + ') and the effect ends',
+        seen && s0.phase === 'build' && !r.vis && r.st.phase === 'idle' && page.url() === urlBefore && (r.cls || 0) < 0.01,
+        (seen ? 'button visible during the build' : 'button never visible') + ', was ' + s0.phase + ', banner ' + (r.vis ? 'still there' : 'gone') + ', effect ' + r.st.phase + ' (' + (r.st.lastExit || '') + ')');
       await ctx.close();
     }
     if (args.interact) {
@@ -651,23 +699,50 @@ function fixedTargets() {
   if (CHECKS.has('fixed')) {
     // ---------- the overlay never draws over fixed elements: overlay shown vs. hidden, module paused
     const { ctx, page } = await openEffect('scroll', { after: 0.25 });
-    const samples = [], covered = [];
+    const samples = [], covered = [], recheck = [];
+    // the page must not move between the two screenshots (edges of round or shadowed buttons show what is behind)
+    const still = () => page.evaluate(() => new Promise((res) => { let y = scrollY, n = 0, k = 0; (function f() { if (scrollY === y) n++; else { n = 0; y = scrollY; } if (n >= 4 || ++k > 90) res(); else requestAnimationFrame(f); })(); }));
     const sample = async () => {
+      await still();
       const targets = await page.evaluate(fixedTargets);
       if (!targets.length) return;
       await page.evaluate(() => window.SwarmRebuild._pause(true));
       await page.waitForTimeout(60);
       for (const t of targets) {
         if (t.clip.width < 2 || t.clip.height < 2) continue;
-        const a = await page.screenshot({ clip: t.clip, caret: 'initial' }); // not animations:'disabled': it would fast-forward the safety timer
-        await page.evaluate(() => { const r = document.getElementById('swarm-rebuild-root'); if (r) r.style.visibility = 'hidden'; });
-        const b = await page.screenshot({ clip: t.clip, caret: 'initial' }); // not animations:'disabled': it would fast-forward the safety timer
-        await page.evaluate(() => { const r = document.getElementById('swarm-rebuild-root'); if (r) r.style.visibility = ''; });
-        const d = await pixelDiff(page, b64(a), b64(b));
+        // shown / hidden / shown again: if the two "shown" shots differ, the page itself is moving there (its own
+        // transition seen through a round or shadowed edge): look again a little later
+        let d = { ratio: 0 };
+        for (let k = 0; k < 4; k++) {
+          const a = await page.screenshot({ clip: t.clip, caret: 'initial' }); // not animations:'disabled': it would fast-forward the safety timer
+          await page.evaluate(() => { const r = document.getElementById('swarm-rebuild-root'); if (r) r.style.visibility = 'hidden'; });
+          const b = await page.screenshot({ clip: t.clip, caret: 'initial' });
+          await page.evaluate(() => { const r = document.getElementById('swarm-rebuild-root'); if (r) r.style.visibility = ''; });
+          const c = await page.screenshot({ clip: t.clip, caret: 'initial' });
+          d = await pixelDiff(page, b64(a), b64(b));
+          if ((await pixelDiff(page, b64(a), b64(c))).ratio <= 0.002) break;
+          await page.waitForTimeout(350);
+        }
         samples.push(t.name);
-        if (d.ratio > 0.002) covered.push(t.name + ' ' + (d.ratio * 100).toFixed(2) + '%');
+        if (d.ratio > 0.002) (/\(sticky\)$/.test(t.name) ? recheck : covered).push(Object.assign({ pct: (d.ratio * 100).toFixed(2) }, t));
       }
       await page.evaluate(() => window.SwarmRebuild._pause(false));
+      // a sticky bar that has just been finished may still have its placeholder fading out for a moment (it gets its
+      // hole once its build is over): look again half a second later
+      while (recheck.length) {
+        const t = recheck.shift();
+        await page.waitForTimeout(500);
+        await page.evaluate(() => window.SwarmRebuild._pause(true));
+        await page.waitForTimeout(60);
+        const a2 = await page.screenshot({ clip: t.clip, caret: 'initial' });
+        await page.evaluate(() => { const r = document.getElementById('swarm-rebuild-root'); if (r) r.style.visibility = 'hidden'; });
+        const b2 = await page.screenshot({ clip: t.clip, caret: 'initial' });
+        await page.evaluate(() => { const r = document.getElementById('swarm-rebuild-root'); if (r) r.style.visibility = ''; });
+        await page.evaluate(() => window.SwarmRebuild._pause(false));
+        const st2 = await page.evaluate(STATE);
+        const d2 = await pixelDiff(page, b64(a2), b64(b2));
+        if (d2.ratio > 0.002 && st2.phase === 'build') covered.push(t.name + ' ' + (d2.ratio * 100).toFixed(2) + '% (still after 0.5 s)');
+      }
     };
     await sample();
     for (let k = 0; k < 16; k++) {
@@ -679,7 +754,7 @@ function fixedTargets() {
     }
     const names = [...new Set(samples)];
     check('fixed: the effect never draws over fixed bars / buttons' + (names.length ? '' : ' (no fixed element on this page)'), covered.length === 0,
-      samples.length + ' samples of ' + (names.join(', ') || 'none') + (covered.length ? ', covered: ' + covered.slice(0, 3).join(', ') : ''));
+      samples.length + ' samples of ' + (names.join(', ') || 'none') + (covered.length ? ', covered: ' + covered.slice(0, 3).map((c) => typeof c === 'string' ? c : c.name + ' ' + c.pct + '%').join(', ') : ''));
     report.fixed = { samples: samples.length, elements: names, covered: covered.length };
     await page.evaluate(() => window.SwarmRebuild.goLive()).catch(() => {});
     await ctx.close();

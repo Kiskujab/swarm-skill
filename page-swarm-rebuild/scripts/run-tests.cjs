@@ -2,14 +2,20 @@
 /*
  * run-tests.cjs — runs verify.cjs on the three test pages of the skill, desktop and mobile.
  *
- *   node scripts/run-tests.cjs [--pages demo,dental,nextjs] [--devices desktop,mobile]
- *                              [--quick] [--min-fps 50] [--out <dir>] [--timeout 3600]
+ *   node scripts/run-tests.cjs [--pages all|core|extra|demo,dental,...] [--devices desktop,mobile]
+ *                              [--quick] [--min-fps 50] [--out <dir>] [--timeout 10800] [--no-project]
  *
  * Test pages (all fictional, all paths relative to the skill folder):
  *   demo     assets/demo/index.html              dark portfolio, 214 layers, 6.6 viewport heights, sticky header
  *   dental   tests/pages/dental/index.html       light small-business page; fixed "Call us" bar (mobile),
  *                                                fixed cookie-style notice (desktop)
  *   nextjs   tests/pages/nextjs/                 Next.js 15 App Router app, React counter (hydration), fixed Help button
+ * extra pages (lighter checks: record, product (desktop), fixed, visible, text):
+ *   lang-hu / lang-ar / lang-ja / lang-emoji    Hungarian, Arabic (right to left), Japanese, emoji-rich
+ *   law          web fonts, sticky header, consent banner, iframe map, lazy images
+ *   accounting   dark mode (desktop run in dark), very long page, scroll-reveal, consent banner added by a script
+ *   bootstrap    Bootstrap 5 from npm: fixed navbar, auto-playing carousel, cards, accordion, modal
+ *   spa          client-side routes, content rendered by JavaScript, background video, iframe player, video
  *
  * Per page and device: one full run (--mode tour --speed 6, i.e. the old "fast" baseline, with
  * --checks all,manual: record, extra, product, protect, fixed, manual) plus recorded runs of what visitors get
@@ -35,11 +41,20 @@ const { spawn } = require('child_process');
 const SKILL = path.resolve(__dirname, '..');
 const args = {};
 process.argv.slice(2).forEach((a, i, arr) => { if (a.startsWith('--')) args[a.slice(2)] = arr[i + 1] && !arr[i + 1].startsWith('--') ? arr[i + 1] : true; });
-const PAGES = String(args.pages || 'demo,dental,nextjs').split(',');
+const CORE = ['demo', 'dental', 'nextjs'];
+const EXTRA = {
+  'lang-hu': [], 'lang-ar': [], 'lang-ja': [], 'lang-emoji': [],
+  law: ['--consent', '#consent-accept'],
+  accounting: ['--consent', '#cc-accept', '--dom-volatile', 'class'],
+  bootstrap: ['--dom-volatile', 'class,style,aria-current,aria-hidden', '--settle', "document.querySelectorAll('.carousel').forEach(function(c){var i=bootstrap.Carousel.getOrCreateInstance(c);i.pause();i.to(0);})"],
+  spa: ['--interact', '#cart']
+};
+const pagesArg = String(args.pages || 'all');
+const PAGES = pagesArg === 'all' ? CORE.concat(Object.keys(EXTRA)) : pagesArg === 'core' ? CORE : pagesArg === 'extra' ? Object.keys(EXTRA) : pagesArg.split(',');
 const DEVICES = String(args.devices || 'desktop,mobile').split(',');
 const OUT = path.resolve(args.out || path.join(os.tmpdir(), 'page-swarm-rebuild-check'));
 const MIN_FPS = args['min-fps'] || '50';
-const TOTAL_S = Number(args.timeout || 3600);
+const TOTAL_S = Number(args.timeout || 10800);
 fs.mkdirSync(OUT, { recursive: true });
 
 const children = new Set();
@@ -99,7 +114,7 @@ function verify(name, url, device, label, checks, extra) {
   const out = path.join(OUT, [name, device, label].join('-'));
   fs.rmSync(path.join(out, 'frames'), { recursive: true, force: true });
   const mode = label === 'tour6' ? 'tour' : label;
-  const long = checks.indexOf('all') >= 0 || checks.indexOf('manual') >= 0;
+  const long = checks.indexOf('all') >= 0 || checks.indexOf('manual') >= 0 || checks.split(',').length >= 4;
   const argv = [path.join(__dirname, 'verify.cjs'), '--url', url, '--mode', mode, '--device', device, '--checks', checks, '--out', out, '--min-fps', String(MIN_FPS), '--timeout', long ? '900' : '300']
     .concat(label === 'tour6' ? ['--speed', '6'] : []).concat(extra || []);
   console.log('\n=== ' + name + ' / ' + device + ' / ' + label + ' (' + checks + ')');
@@ -125,6 +140,7 @@ function verify(name, url, device, label, checks, extra) {
     demo: base + '/assets/demo/index.html',
     dental: base + '/tests/pages/dental/index.html'
   };
+  Object.keys(EXTRA).forEach((k) => { urls[k] = base + '/tests/pages/' + k + '/index.html'; });
   if (PAGES.includes('nextjs')) urls.nextjs = await startNext();
 
   const plan = [];
@@ -143,6 +159,11 @@ function verify(name, url, device, label, checks, extra) {
       plan.push(['nextjs', device, 'tour6', 'all,manual', ['--interact', '[data-testid=counter]']]);
       plan.push(['nextjs', device, 'scroll', 'record', ['--interact', '[data-testid=counter]']]);
     }
+    Object.keys(EXTRA).forEach((k) => {
+      if (!PAGES.includes(k)) return;
+      const x = EXTRA[k].concat(k === 'accounting' && device === 'desktop' ? ['--color-scheme', 'dark'] : []);
+      plan.push([k, device, 'scroll', device === 'desktop' ? 'record,extra,product,fixed,visible,text' : 'record,fixed,visible,text', x]);
+    });
   }
   const runs = [];
   // the installer (backup, restore, uninstall) on sample projects
@@ -172,7 +193,8 @@ function verify(name, url, device, label, checks, extra) {
       pixel_pct: rep.pixelDiff != null ? +(rep.pixelDiff * 100).toFixed(3) : null,
       viewport_heights: rep.pageViewportHeights || null,
       scroll_curve: rep.scrollCurve ? rep.scrollCurve.map((p) => p.progress) : null,
-      manual: rep.manual || null, fixed: rep.fixed || null, protect: rep.protect || null, motion: rep.motion || null
+      manual: rep.manual || null, fixed: rep.fixed || null, protect: rep.protect || null, motion: rep.motion || null,
+      visible: rep.visible || null, text: rep.text || null
     };
   });
   fs.writeFileSync(path.join(OUT, 'summary.json'), JSON.stringify(rows, null, 2));
@@ -186,6 +208,12 @@ function verify(name, url, device, label, checks, extra) {
   });
   rows.filter((r) => r.fixed).forEach((r) => md.push('- fixed ' + r.page + '/' + r.device + ': ' + r.fixed.samples + ' pixel samples of ' + (r.fixed.elements.join(', ') || 'no fixed element') + ', covered ' + r.fixed.covered));
   rows.filter((r) => r.protect && r.protect.above).forEach((r) => md.push('- above the view ' + r.page + '/' + r.device + ': ' + r.protect.above.probes + ' probes, ' + r.protect.above.checked + ' layer checks, not final ' + r.protect.above.bad));
+  rows.filter((r) => r.visible).forEach((r) => {
+    const v = r.visible, rd = v.read || {}, f = v.fast || {}, i = v.idle || {};
+    md.push('- visible ' + r.page + '/' + r.device + ': starts ' + rd.starts + ', in view at start min ' + Math.round((rd.min || 0) * 100) + ' % / median ' + Math.round((rd.median || 0) * 100) + ' %, agents off screen ' + rd.offAgents + ', tasks out of view ' + rd.offTasks +
+      '; fill after fast scrolls avg ' + f.avgFill + ' s / max ' + f.maxFill + ' s; idle overlap median ' + i.overlapMedian + ', frames with 3+ ' + (i.framesWith3 != null ? (i.framesWith3 * 100).toFixed(1) + ' %' : '?'));
+  });
+  rows.filter((r) => r.text).forEach((r) => md.push('- text ' + r.page + '/' + r.device + ': ' + r.text.cuts + ' cuts, split ' + r.text.splits + ', carets ' + r.text.carets + ' (' + r.text.rtlCarets + ' RTL), off ' + r.text.caretBad + ', scripts ' + Object.keys(r.text.scripts || {}).join('/')));
   rows.filter((r) => r.motion).forEach((r) => {
     const m = r.motion, o = m.opening || {}, f = m.finale || {}, g = m.gravity || {}, d = m.difficulty || {}, ms = m.mouse;
     const pc = (x) => x == null ? '—' : Math.round(x * 1000) / 10 + ' %';

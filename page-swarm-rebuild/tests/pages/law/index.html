@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harbor &amp; Vale Attorneys</title>
+<!-- Fictional test page for page-swarm-rebuild: law firm with web fonts (@font-face, font-display: swap), a sticky header,
+     a cookie consent banner (fixed, Accept / Decline work at once), an embedded map (iframe) and lazy-loaded images. -->
+<script>(function(d,w){w.__swarmRebuildSnippet=1;try{var q=new URLSearchParams(location.search).get('rebuild');if(q==='0')return;if(w.matchMedia&&w.matchMedia('(prefers-reduced-motion: reduce)').matches)return;if(q!=='1'&&sessionStorage.getItem('swarm-rebuild:seen'))return;var s=d.createElement('style');s.id='swarm-rebuild-hide';s.textContent='@layer swarm-rebuild{body *{visibility:var(--sr-v,hidden)!important}#swarm-rebuild-root{opacity:var(--sr-o,1)!important}}';d.head.appendChild(s);try{w.__srDms=d.documentElement.animate([{'--sr-v':'visible','--sr-o':'0'}],{duration:1,delay:5000,fill:'forwards'})}catch(e){}setTimeout(function(){var r=w.SwarmRebuild;if(!(r&&r.active)){var e=d.getElementById('swarm-rebuild-hide');if(e)e.remove()}},5000)}catch(e){}})(document,window);</script>
+<link rel="stylesheet" href="../../../assets/swarm-rebuild.css">
+<style>
+  @font-face { font-family: "Vale Serif"; src: url(fonts/DejaVuSerif.woff2) format("woff2"); font-weight: 400; font-display: swap; }
+  @font-face { font-family: "Vale Serif"; src: url(fonts/DejaVuSerif-Bold.woff2) format("woff2"); font-weight: 700; font-display: swap; }
+  :root { --ink: #1b2430; --muted: #5a6573; --gold: #a07a3c; --line: #e3e6ea; --bg: #fbfaf7; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 17px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--bg); }
+  h1, h2, h3, .logo { font-family: "Vale Serif", Georgia, serif; }
+  a { color: var(--gold); }
+  .wrap { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
+  header { position: sticky; top: 0; z-index: 20; background: rgba(251,250,247,.94); border-bottom: 1px solid var(--line); }
+  header .wrap { display: flex; align-items: center; gap: 28px; height: 72px; }
+  .logo { font-weight: 700; font-size: 22px; color: var(--ink); text-decoration: none; margin-right: auto; }
+  nav a { color: var(--muted); text-decoration: none; margin-left: 22px; font-size: 15px; }
+  .btn { display: inline-block; padding: 12px 22px; background: var(--ink); color: #fff; text-decoration: none; border-radius: 4px; font-weight: 600; font-size: 15px; border: 0; cursor: pointer; font-family: inherit; }
+  .btn.gold { background: var(--gold); }
+  section { padding: 90px 0; }
+  .hero { background: #1e2a38 url(img/office.svg) center / cover no-repeat; color: #fff; padding: 120px 0; }
+  .hero h1 { font-size: 54px; line-height: 1.12; margin: 0 0 18px; max-width: 760px; }
+  .hero p { font-size: 20px; max-width: 620px; color: #dfe5ec; }
+  h2 { font-size: 36px; margin: 0 0 12px; }
+  .lead { color: var(--muted); max-width: 640px; }
+  .areas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-top: 36px; }
+  .area { background: #fff; padding: 30px; }
+  .area h3 { margin: 0 0 8px; font-size: 21px; }
+  .area p { margin: 0; color: var(--muted); font-size: 16px; }
+  .people { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 36px; }
+  .people img { width: 100%; height: auto; display: block; border-radius: 4px; }
+  .people h3 { margin: 14px 0 2px; }
+  .people p { margin: 0; color: var(--muted); font-size: 15px; }
+  blockquote { margin: 0; padding: 28px 32px; background: #fff; border-left: 4px solid var(--gold); font-family: "Vale Serif", Georgia, serif; font-size: 20px; }
+  blockquote cite { display: block; margin-top: 10px; font: 15px system-ui, sans-serif; color: var(--muted); font-style: normal; }
+  .quotes { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 30px; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; }
+  iframe { width: 100%; height: 320px; border: 1px solid var(--line); border-radius: 4px; display: block; }
+  form label { display: block; font-size: 14px; color: var(--muted); margin: 14px 0 6px; }
+  form input, form textarea { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 4px; font: inherit; }
+  footer { background: var(--ink); color: #c6ced8; padding: 40px 0 110px; font-size: 14px; }
+  footer a { color: #fff; }
+  .consent { position: fixed; left: 24px; right: 24px; bottom: 20px; z-index: 50; max-width: 760px; margin: 0 auto; background: #fff; border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,.18); border-radius: 8px; padding: 16px 18px; display: flex; gap: 16px; align-items: center; font-size: 15px; }
+  .consent p { margin: 0; flex: 1; color: var(--muted); }
+  .consent button { padding: 9px 16px; border-radius: 4px; border: 1px solid var(--ink); background: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  .consent button.accept { background: var(--ink); color: #fff; }
+  @media (max-width: 759px) {
+    nav { display: none; } .hero h1 { font-size: 36px; } .hero { padding: 80px 0; }
+    .areas, .people, .quotes, .split { grid-template-columns: 1fr; }
+    .consent { flex-direction: column; align-items: stretch; left: 12px; right: 12px; bottom: 12px; }
+  }
+</style>
+</head>
+<body>
+<header><div class="wrap"><a class="logo" href="#top">Harbor &amp; Vale</a><nav><a href="#practice">Practice areas</a><a href="#team">Attorneys</a><a href="#contact">Contact</a></nav><a class="btn" href="tel:+15550144100">+1 555 0144 100</a></div></header>
+<main id="top">
+  <section class="hero"><div class="wrap"><h1>Clear legal advice for families and growing businesses</h1><p>Contracts, property, employment and family law. A first consultation of 30 minutes is free, in person or by video.</p><p><a class="btn gold" id="book" href="#contact">Book a free consultation</a></p></div></section>
+  <section id="practice"><div class="wrap"><h2>Practice areas</h2><p class="lead">Twelve lawyers, one team. You always know who is working on your case and what it costs.</p>
+    <div class="areas">
+      <article class="area"><h3>Business contracts</h3><p>Supplier and customer agreements, terms and conditions, shareholder agreements.</p></article>
+      <article class="area"><h3>Real estate</h3><p>Purchases, leases, building permits and neighbour disputes.</p></article>
+      <article class="area"><h3>Employment law</h3><p>Contracts, dismissals, workplace investigations and settlements.</p></article>
+      <article class="area"><h3>Family law</h3><p>Divorce, custody and prenuptial agreements, handled with care.</p></article>
+      <article class="area"><h3>Inheritance</h3><p>Wills, estates and disputes between heirs.</p></article>
+      <article class="area"><h3>Data protection</h3><p>Privacy policies, data processing agreements and GDPR audits.</p></article>
+    </div></div></section>
+  <section id="team"><div class="wrap"><h2>Our attorneys</h2><p class="lead">Partners who answer their own phone.</p>
+    <div class="people">
+      <figure><img src="img/p1.svg" width="480" height="560" alt="Portrait of Eleanor Vale" loading="lazy"><h3>Eleanor Vale</h3><p>Managing partner, contracts</p></figure>
+      <figure><img src="img/p2.svg" width="480" height="560" alt="Portrait of Marcus Harbor" loading="lazy"><h3>Marcus Harbor</h3><p>Partner, real estate</p></figure>
+      <figure><img src="img/p3.svg" width="480" height="560" alt="Portrait of Priya Raman" loading="lazy"><h3>Priya Raman</h3><p>Employment law</p></figure>
+      <figure><img src="img/p4.svg" width="480" height="560" alt="Portrait of Tomás Ibarra" loading="lazy"><h3>Tomás Ibarra</h3><p>Family law</p></figure>
+      <figure><img src="img/p5.svg" width="480" height="560" alt="Portrait of Grace Okafor" loading="lazy"><h3>Grace Okafor</h3><p>Inheritance</p></figure>
+      <figure><img src="img/p6.svg" width="480" height="560" alt="Portrait of Jonas Weber" loading="lazy"><h3>Jonas Weber</h3><p>Data protection</p></figure>
+    </div></div></section>
+  <section><div class="wrap"><h2>What clients say</h2><div class="quotes">
+    <blockquote>“They explained every option before we signed. No surprises on the invoice.”<cite>— A bakery owner (fictional)</cite></blockquote>
+    <blockquote>“Calm, quick and kind during a very hard time for our family.”<cite>— A client from Riverside (fictional)</cite></blockquote>
+  </div></div></section>
+  <section id="contact"><div class="wrap split">
+    <div><h2>Visit us</h2><p>18 Harbor Street, Suite 4 (fictional) · <a href="tel:+15550144100">+1 555 0144 100</a> · <a href="mailto:office@example.invalid">office@example.invalid</a></p>
+      <iframe src="map.html" title="Map of our office" loading="lazy"></iframe></div>
+    <form onsubmit="return false"><h3>Ask a question</h3><label for="n">Name</label><input id="n"><label for="q">Your question</label><textarea id="q" rows="4"></textarea><p><button class="btn" type="submit">Send</button></p></form>
+  </div></section>
+</main>
+<footer><div class="wrap">Harbor &amp; Vale Attorneys — fictional test page · <a href="#top">Back to top</a></div></footer>
+<div class="consent" id="consent" role="dialog" aria-label="Cookie consent">
+  <p>We use one cookie to remember this choice. No tracking.</p>
+  <button type="button" id="consent-decline">Decline</button>
+  <button type="button" class="accept" id="consent-accept">Accept</button>
+</div>
+<script>
+  (function () {
+    var c = document.getElementById('consent');
+    try { if (localStorage.getItem('law-consent')) c.style.display = 'none'; } catch (e) {}
+    function choose(v) { try { localStorage.setItem('law-consent', v); } catch (e) {} c.style.display = 'none'; }
+    document.getElementById('consent-accept').addEventListener('click', function () { choose('yes'); });
+    document.getElementById('consent-decline').addEventListener('click', function () { choose('no'); });
+  })();
+</script>
+<script src="../../../assets/swarm-rebuild.js" data-auto data-focus="#book"></script>
+</body>
+</html>

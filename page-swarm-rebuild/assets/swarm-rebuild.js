@@ -812,7 +812,7 @@
     secs.forEach(function (s, k) { s.i = k; secMap.set(s.el, k); });
     st.sections = secs.map(function (s) { return { y: s.y, h: s.h, total: 0, done: 0, items: 0, itemsDone: 0, tails: [] }; });
 
-    var layers = [], groups = [], instant = [], tails = [], natHidden = [];
+    var layers = [], groups = [], instant = [], tails = [], natHidden = [], offNow = [];
     var stack = [];   // open master groups (to collect their layers)
     var exSel = o.exclude, inSel = o.instant;
 
@@ -840,10 +840,17 @@
       var name = el.localName;
       if (SKIP_TAG[name] || el.id === ROOT_ID) return null;
       var cs = getComputedStyle(el);
-      if (cs.display === 'none') return null;
+      // not shown by the page now (a closed menu, a carousel slide, a tab, a scroll-reveal element at opacity 0):
+      // not animated, but final already, so it appears complete whenever the page shows it during the build
+      if (cs.display === 'none') { offNow.push(el); return null; }
       if (cs.display === 'contents') return { el: el, cs: cs, contents: true };
       if (cs.visibility !== 'visible') { natHidden.push(el); return null; } // hidden by the page itself: leave alone
-      if (parseFloat(cs.opacity) < 0.05) return null;
+      if (parseFloat(cs.opacity) < 0.05) {
+        // a part of the page flow at opacity 0 is a scroll-reveal section (it fades in when it comes into view, about
+        // when it is built here): built like the rest; a small or floating one (tooltip, menu) is final at once
+        var rr = el.getBoundingClientRect();
+        if (!(/^(static|relative)$/.test(cs.position) && rr.width >= 40 && rr.height >= 20 && el.firstElementChild)) { offNow.push(el); return null; }
+      }
       if (cs.position === 'fixed' || cs.position === 'sticky') st.fixedEls.push(el);
       if (cs.position === 'sticky') st.stickyEls.push(el);
       if ((exSel && el.matches(exSel)) || (inSel && el.matches(inSel)) || cs.position === 'fixed') return { el: el, instant: true };
@@ -970,6 +977,8 @@
     st.layers = layers; st.groups = groups; st.instant = instant; st.tails = tails;
     tails.forEach(function (t) { st.sections[t.section].tails.push(t.el); });
     instant.forEach(function (el) { revealEl(st, el, true); });
+    offNow.forEach(function (el) { revealEl(st, el, true); });
+    st.offNow = offNow.length;
     // elements the page hides itself keep their own visibility, also if the dead-man switch shows the page
     natHidden.forEach(function (el) { st.reveals.push({ el: el, tree: true, exempt: true }); insertReveal(st, el, true, true); });
   }
@@ -1816,8 +1825,11 @@
     }
     var n = members.length;
     var copies = [], sels = [], lines = [];
-    tk.cl = { members: members, copies: copies, sels: sels, lines: lines };
-    var slideD = (0.42 + 0.05 * (n - 1)) / tk.mw;
+    // the master card scrolled (mostly) out of view: the copies appear right at their places (no invisible trip to
+    // the master and no slide from out of view, so the visible part is not left empty meanwhile)
+    var far = !st.touring && visPart(M.y, M.h, window.scrollY, window.innerHeight, st.docH) < 0.2, F0 = members[0].R;
+    tk.cl = { members: members, copies: copies, sels: sels, lines: lines, far: far };
+    var slideD = (far ? 0.1 : 0.42 + 0.05 * (n - 1)) / tk.mw;
     // helpers ride along with the copies
     while (tk.helpers.length < Math.min(3, n) && idle && idle.length) {
       var hlp = idle.shift(); hlp.task = tk; tk.helpers.push(hlp);
@@ -1829,18 +1841,19 @@
     var rwTotal = 0;
     rw.forEach(function (r) { rwTotal = Math.max(rwTotal, r.s + r.d + 0.05); });
     return [
-      travel(st, tk, M.x, M.y),
+      far ? travel(st, tk, F0.x, F0.y) : travel(st, tk, M.x, M.y),
       {
-        d: 0.16 / tk.mw,
+        d: (far ? 0.08 : 0.16) / tk.mw,
         start: function () {
           tk.sel = new Sel(st, true);
-          tk.sel.set(M.x, M.y, M.w, M.h);
+          if (far) tk.sel.set(F0.x, F0.y, F0.w, F0.h); else tk.sel.set(M.x, M.y, M.w, M.h);
           tk.agent.setMode('arrow');
           members.forEach(function (m) {
             var c = makeProxy(st, g.master.el, M, false);
             c.el.classList.add('sr-clone');
             copies.push(c);
             if (m.done) rm(c.el);
+            if (far) { lines.push(null); return; }
             var ln = mk('div', 'sr-rline', st.world);
             var dx = m.R.x - M.x, dy = m.R.y - M.y, len = Math.hypot(dx, dy);
             var ys = M.y + M.h + 8;
@@ -1859,13 +1872,13 @@
         start: function () {
           tk.sel.out(); tk.sel = null;
           tk.cl.sag = members.map(function (m) { return sagFor(st, m.R.x - M.x, m.R.y - M.y, m.R.w * m.R.h); });
-          if (st.mlog) tk.cl.rec = members.map(function (m, i) { return motionRec(st, 'carry', M.x, M.y, m.R.x, m.R.y, m.R.w * m.R.h, tk.cl.sag[i], 0); });
+          if (st.mlog && !far) tk.cl.rec = members.map(function (m, i) { return motionRec(st, 'carry', M.x, M.y, m.R.x, m.R.y, m.R.w * m.R.h, tk.cl.sag[i], 0); });
         },
         tick: function (tk2, p) {
           var T = p * slideD * tk.mw;
           members.forEach(function (m, i) {
             if (m.done) return;
-            var q = clamp((T - i * 0.05) / 0.42, 0, 1), e = easeInOut(q), sg = 4 * tk.cl.sag[i];
+            var q = far ? 1 : clamp((T - i * 0.05) / 0.42, 0, 1), e = easeInOut(q), sg = 4 * tk.cl.sag[i];
             var x = lerp(M.x, m.R.x, e), y = lerp(M.y, m.R.y, e) + sg * e * (1 - e);
             if (tk.cl.rec) motionPt(tk.cl.rec[i], x, y, q);
             var sx = lerp(1, m.R.w / M.w, e), sy = lerp(1, m.R.h / M.h, e);
@@ -1873,6 +1886,7 @@
             cs.transform = 'translate(' + (x - M.x) + 'px,' + (y - M.y) + 'px) scale(' + sx + ',' + sy + ')';
             var blur = Math.sin(q * Math.PI) * 2.2;
             cs.filter = blur > 0.2 ? 'blur(' + blur.toFixed(1) + 'px)' : '';
+            if (far) { var cr = i === n - 1 ? tk.agent : tk.helpers[i]; if (cr) { cr.x = x; cr.y = y; } return; }
             // afterimages: outline ghosts trailing behind
             var gh = copies[i].gh || (copies[i].gh = [mk('div', 'sr-cghost', st.world), mk('div', 'sr-cghost', st.world)]);
             for (var k = 0; k < 2; k++) {
@@ -1889,7 +1903,7 @@
         end: function () {
           copies.forEach(function (c) { if (c.gh) c.gh.forEach(rm); c.el.style.filter = ''; });
           var gy = itemBox(tk.it);
-          lines.forEach(function (pair) { pair.forEach(function (l) { l.classList.add('sr-out'); fading(st, l, gy.y + gy.h + 16, 300); }); });
+          lines.forEach(function (pair) { if (pair) pair.forEach(function (l) { l.classList.add('sr-out'); fading(st, l, gy.y + gy.h + 16, 300); }); });
         }
       },
       {

@@ -73,8 +73,8 @@ Order A, B, C, D, E, F, G, H; commit + push after every block. Full suite only o
 | C language support | done | graphemes, RTL, 4 language pages, verify group `text`; Arabic CLS 0.0016 (overlay only, see decisions) |
 | D legacy backup | done | `scripts/project.cjs` install / uninstall / restore / list; `scripts/test-project.cjs` |
 | E one-command removal | done | `project.cjs uninstall [--purge]`, hash-checked against the backup |
-| F many realistic test pages | next | |
-| G perf / SEO / a11y / minified build | open | |
+| F many realistic test pages | done | law, accounting, bootstrap, spa (+ 4 language pages); compatibility table in SKILL.md |
+| G perf / SEO / a11y / minified build | next | |
 | H extras | open | |
 
 ### Decisions (task 4)
@@ -129,6 +129,21 @@ Order A, B, C, D, E, F, G, H; commit + push after every block. Full suite only o
 - (D) Measured: 31/31 checks of test-project.cjs (4 sample projects, broken on purpose, restore hash-identical;
   install + uninstall --purge byte for byte identical; a later hand edit survives uninstall; Next.js builds with
   legacy/ present and nothing from it in .next; the HTML sample runs the effect and has no trace after uninstall).
+- (F) Four pages instead of one per pattern, each combining several real-world patterns (law: web fonts, sticky
+  header, static consent banner, iframe, lazy images; accounting: dark mode, very long page, scroll-reveal, sticky
+  TOC, consent banner injected later, fixed back-to-top; bootstrap: Bootstrap 5.3.8 from npm (dist files vendored,
+  MIT licence included), fixed navbar, auto-playing carousel, cards, accordion, modal; spa: client routes, JS-rendered
+  content, late block, background video, iframe player, video). Web fonts are DejaVu subsets (licence included).
+- (F) Module fixes found by these pages: elements not shown at the scan (`display: none`: carousel slides, tabs, menus,
+  modals) stayed hidden until the end even when the page showed them -> now final at once; opacity-0 scroll-reveal
+  sections were never built -> built when they are part of the page flow (>= 40 x 20 px, static / relative), small or
+  floating ones (tooltips) final at once; a clone row whose master card is out of view made an invisible trip and slide
+  (~1 s of empty view) -> copies appear at their places.
+- (F) Verify fixes (no module bug): the reference page is scrolled once before its screenshot (lazy images,
+  scroll-reveal), videos are paused at frame 0 for screenshots, `--settle` stops a carousel, `--dom-volatile` for
+  attributes the page changes by itself, the fixed-element pixel test waits until scrolling stops and repeats when the
+  page itself moves behind a round edge, a sticky bar just finished is looked at again after 0.5 s (its placeholder
+  fades), no-JS check for pages that render with JavaScript (SPA) only requires that nothing of the effect hides them.
 - (A) 1.2.0 measured with the same probe (demo desktop, reading down): 58 of 120 starts under 60 % in view (many at
   0 %), working agents off screen in 42 % of the samples. 1.3: 0 starts under 60 %, 0 off screen.
 
