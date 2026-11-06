@@ -145,7 +145,10 @@ A/B tests (debug add-on).
 The module assumes no language. Typing goes by user-perceived characters (grapheme clusters, `Intl.Segmenter`, with
 a fallback that joins combining marks, ZWJ sequences, skin tones, variation selectors and flag pairs): an accented
 letter, an emoji family, a flag or a letter with Arabic / Hebrew marks is never split. Untyped text stays in place as
-hidden text, and browsers shape across that boundary, so Arabic letters keep their joined forms and nothing reflows.
+hidden text, and browsers shape across that boundary, so letters keep their joined forms and nothing reflows. In
+right-to-left text the line is not even split: the untyped rest is made transparent with a CSS custom highlight
+(`::highlight(sr-rest)` in the stylesheet), so numbers and Latin words inside Arabic lines never move by a fraction of
+a pixel (CLS 0 on the Arabic page; browsers without the Highlight API fall back to the split).
 Right-to-left elements (`direction: rtl`, e.g. `<html dir="rtl">`): frames grow from the right edge, lines are drawn
 from right to left, the agent types on the left side and the caret sits left of the last typed letter; a
 left-to-right run inside right-to-left text (a number, an e-mail address, a Latin name) is typed as a whole, like a
@@ -157,8 +160,8 @@ Arabic-Indic digits, a Hebrew quote), `lang-ja` (Japanese), `lang-emoji`. Known 
 
 ## Performance, search engines, accessibility
 
-- **Size** (what a visitor downloads; the debug add-on never): module 70 KB minified / 27.5 KB gzip, stylesheet
-  6 KB / 1.6 KB; budget 30 KB + 2 KB gzip (`node scripts/build-min.cjs --check`). Rebuild the `.min` files after every
+- **Size** (what a visitor downloads; the debug add-on never): module 81 KB minified / 31.2 KB gzip (1.4.0), stylesheet
+  6 KB / 1.6 KB; budget 32 KB + 2 KB gzip (`node scripts/build-min.cjs --check`). Rebuild the `.min` files after every
   change to the module (`--modules <folder with terser and csso>`).
 - **Lighthouse** (`scripts/perf.cjs`, median of 3, mobile / desktop presets, the test machine without GPU):
 

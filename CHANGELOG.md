@@ -27,6 +27,9 @@ Module (`assets/`)
   (before the next paint). CLS stays 0.
 - **A modal with a backdrop pauses the build** (new option `pauseOnModal`): the overlay is hidden, the build and the
   watchdogs wait, and everything goes on where it was when it closes. A consent wall at load holds the opening.
+- **Right-to-left typing without layout shift:** the untyped rest of Arabic / Hebrew text is made transparent with a CSS
+  custom highlight (`::highlight(sr-rest)`) instead of being split off into a hidden node; numbers and Latin words in
+  Arabic lines no longer move by fractions of a pixel. Arabic page, text run: CLS 0.0203 -> 0.0000 (desktop, mobile).
 - **Client-side navigation:** a new URL (not a hash change) or most of the unbuilt content removed shows the new page
   complete at once.
 
@@ -40,7 +43,7 @@ Test pages
   drop-down and hamburger menu, language switcher, order form, newsletter pop-up with a backdrop, chat widget added
   later, in-page links; on the landing page and in the Pages build.
 
-Size: module 30.8 KB gzip (budget raised from 30 to 32 KB for the interaction handling), stylesheet 1.6 KB.
+Size: module 31.2 KB gzip (budget raised from 30 to 32 KB for the interaction handling), stylesheet 1.6 KB.
 
 ## 1.3.0 — 2026-11-05 — visible-only build, any language, safe install
 

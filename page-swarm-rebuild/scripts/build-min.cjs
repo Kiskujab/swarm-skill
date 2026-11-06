@@ -18,7 +18,7 @@ const args = {};
 process.argv.slice(2).forEach((a, i, arr) => { if (a.startsWith('--')) args[a.slice(2)] = arr[i + 1] && !arr[i + 1].startsWith('--') ? arr[i + 1] : true; });
 const A = path.resolve(__dirname, '..', 'assets');
 // size budget for what a visitor downloads (module + stylesheet, minified, gzip)
-const BUDGET = { js: 32 * 1024, css: 2 * 1024 }; // 1.3.0: 28.3 + 1.6 KB; 1.4.0 (using the page while it builds): 30.8 + 1.6 KB
+const BUDGET = { js: 32 * 1024, css: 2 * 1024 }; // 1.3.0: 28.3 + 1.6 KB; 1.4.0 (using the page while it builds): 31.2 + 1.6 KB
 const paths = [process.cwd(), __dirname].concat(args.modules && args.modules !== true ? [path.resolve(String(args.modules))] : []);
 function need(name) {
   try { return require(require.resolve(name, { paths })); } catch (e) { console.error('build-min: ' + name + ' not found (npm i terser csso, then --modules <that folder>)'); process.exit(2); }
