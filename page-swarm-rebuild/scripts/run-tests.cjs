@@ -16,6 +16,11 @@
  *   accounting   dark mode (desktop run in dark), very long page, scroll-reveal, consent banner added by a script
  *   bootstrap    Bootstrap 5 from npm: fixed navbar, auto-playing carousel, cards, accordion, modal
  *   spa          client-side routes, content rendered by JavaScript, background video, iframe player, video
+ *   bakery       used while it builds: consent bar at the top in the page flow (pushes the content), drop-down /
+ *                hamburger menu, language switcher, order form, newsletter pop-up with a backdrop, chat widget added
+ *                later, in-page links; bakery-modal / -bottom / -late: the same page with a consent dialog on a
+ *                backdrop, a fixed bar at the bottom, a consent manager added 1.2 s after load
+ * pages with a consent banner, menus or forms also run the interact group (verify --checks interact)
  *
  * Per page and device: one full run (--mode tour --speed 6, i.e. the old "fast" baseline, with
  * --checks all,manual: record, extra, product, protect, fixed, manual) plus recorded runs of what visitors get
@@ -47,8 +52,17 @@ const EXTRA = {
   law: ['--consent', '#consent-accept'],
   accounting: ['--consent', '#cc-accept', '--dom-volatile', 'class'],
   bootstrap: ['--dom-volatile', 'class,style,aria-current,aria-hidden', '--settle', "document.querySelectorAll('.carousel').forEach(function(c){var i=bootstrap.Carousel.getOrCreateInstance(c);i.pause();i.to(0);})"],
-  spa: ['--interact', '#cart']
+  spa: ['--interact', '#cart', '--route', '#start'],
+  // the bakery in its four consent forms (interact group: the visitor uses the page while it builds)
+  bakery: ['--consent', '#top-accept', '--menu', '#visit-btn|#visit-panel', '--menu-mobile', '#burger|#mnav', '--field', '#o-name', '--popup', '#nl-open|#nl-close', '--anchor', '#order-btn'],
+  'bakery-modal': ['--consent', '#modal-accept'],
+  'bakery-bottom': ['--consent', '#bottom-accept'],
+  'bakery-late': ['--consent', '#late-accept', '--late']
 };
+// pages served from another path (variants of one page)
+const PAGE_PATH = { 'bakery-modal': 'bakery/index.html?banner=modal', 'bakery-bottom': 'bakery/index.html?banner=bottom', 'bakery-late': 'bakery/index.html?banner=late' };
+// pages whose consent banner / menus / forms are used during the build (verify --checks interact)
+const INTERACT = new Set(['law', 'accounting', 'spa', 'bakery', 'bakery-modal', 'bakery-bottom', 'bakery-late']);
 const pagesArg = String(args.pages || 'all');
 const PAGES = pagesArg === 'all' ? CORE.concat(Object.keys(EXTRA)) : pagesArg === 'core' ? CORE : pagesArg === 'extra' ? Object.keys(EXTRA) : pagesArg.split(',');
 const DEVICES = String(args.devices || 'desktop,mobile').split(',');
@@ -140,7 +154,7 @@ function verify(name, url, device, label, checks, extra) {
     demo: base + '/assets/demo/index.html',
     dental: base + '/tests/pages/dental/index.html'
   };
-  Object.keys(EXTRA).forEach((k) => { urls[k] = base + '/tests/pages/' + k + '/index.html'; });
+  Object.keys(EXTRA).forEach((k) => { urls[k] = base + '/tests/pages/' + (PAGE_PATH[k] || k + '/index.html'); });
   if (PAGES.includes('nextjs')) urls.nextjs = await startNext();
 
   const plan = [];
@@ -162,7 +176,9 @@ function verify(name, url, device, label, checks, extra) {
     Object.keys(EXTRA).forEach((k) => {
       if (!PAGES.includes(k)) return;
       const x = EXTRA[k].concat(k === 'accounting' && device === 'desktop' ? ['--color-scheme', 'dark'] : []);
-      plan.push([k, device, 'scroll', device === 'desktop' ? 'record,extra,product,fixed,visible,text' : 'record,fixed,visible,text', x]);
+      const variant = !!PAGE_PATH[k]; // a banner variant: only what the variant changes (record, fixed, interact)
+      const c = variant ? 'record,fixed' : device === 'desktop' ? 'record,extra,product,fixed,visible,text' : 'record,fixed,visible,text';
+      plan.push([k, device, 'scroll', c + (INTERACT.has(k) ? ',interact' : ''), x]);
     });
   }
   const runs = [];
@@ -194,7 +210,7 @@ function verify(name, url, device, label, checks, extra) {
       viewport_heights: rep.pageViewportHeights || null,
       scroll_curve: rep.scrollCurve ? rep.scrollCurve.map((p) => p.progress) : null,
       manual: rep.manual || null, fixed: rep.fixed || null, protect: rep.protect || null, motion: rep.motion || null,
-      visible: rep.visible || null, text: rep.text || null
+      visible: rep.visible || null, text: rep.text || null, interact: rep.interact || null
     };
   });
   fs.writeFileSync(path.join(OUT, 'summary.json'), JSON.stringify(rows, null, 2));
@@ -213,6 +229,7 @@ function verify(name, url, device, label, checks, extra) {
     md.push('- visible ' + r.page + '/' + r.device + ': starts ' + rd.starts + ', in view at start min ' + Math.round((rd.min || 0) * 100) + ' % / median ' + Math.round((rd.median || 0) * 100) + ' %, agents off screen ' + rd.offAgents + ', tasks out of view ' + rd.offTasks +
       '; fill after fast scrolls avg ' + f.avgFill + ' s / max ' + f.maxFill + ' s; idle overlap median ' + i.overlapMedian + ', frames with 3+ ' + (i.framesWith3 != null ? (i.framesWith3 * 100).toFixed(1) + ' %' : '?'));
   });
+  rows.filter((r) => r.interact && r.interact.consent).forEach((r) => md.push('- interact ' + r.page + '/' + r.device + ': consent clicked at ' + Object.entries(r.interact.consent).map(([k, v]) => k + (k === 'mid' ? '' : ' s') + ' (' + v.atLayers + '/' + v.total + ' layers) -> ' + Math.round(v.seenShare * 100) + ' % of the build seen').join(', ') + (r.interact.anchorFill != null ? '; view filled ' + r.interact.anchorFill + ' s after an in-page link' : '')));
   rows.filter((r) => r.text).forEach((r) => md.push('- text ' + r.page + '/' + r.device + ': ' + r.text.cuts + ' cuts, split ' + r.text.splits + ', carets ' + r.text.carets + ' (' + r.text.rtlCarets + ' RTL), off ' + r.text.caretBad + ', scripts ' + Object.keys(r.text.scripts || {}).join('/')));
   rows.filter((r) => r.motion).forEach((r) => {
     const m = r.motion, o = m.opening || {}, f = m.finale || {}, g = m.gravity || {}, d = m.difficulty || {}, ms = m.mouse;

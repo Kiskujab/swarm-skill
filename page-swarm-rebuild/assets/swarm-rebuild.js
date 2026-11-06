@@ -59,6 +59,14 @@
   var MOUSE_MIN = 36;     // px: an agent never comes closer to the mouse pointer than this
   var REST_GAP = 72;      // px: idle agents rest at least this far apart (no clusters of overlapping cursors) ...
   var REST_FADE = 1.4;    // s: ... and fade out after resting this long; they come back with their next task
+  // Esc belongs to the page when the focus is in one of these (it closes the page's dialog, menu or list)
+  var PAGE_ESC = 'dialog,[role="dialog"],[role="alertdialog"],[aria-modal="true"],[role="menu"],[role="menubar"],[role="listbox"],[role="combobox"],[role="tree"],[role="grid"],[aria-expanded="true"]';
+  // the page's own surfaces (consent and cookie banners, dialogs): shown at once and left alone, never built
+  var SURFACE = 'dialog,[role="dialog"],[role="alertdialog"],[aria-modal="true"],[data-swarm-surface]';
+  // ... and elements named like a consent banner (id, class or aria-label): "cookie-banner", "cookieConsent", "gdpr",
+  // "consent-bar" ... (not "cookie-card" of a bakery's product list)
+  var SURFACE_NAME = /consent|gdpr|ccpa|cookie[-_ ]?(banner|bar|notice|consent|popup|pop-up|modal|dialog|box|wall|law|policy|message|alert|notification|container|wrapper|window|overlay|layer|hint|info|panel|settings|accept)/i;
+  var PROBE_DT = 0.15;    // s: how often the layout is checked for changes made by the page (a banner closed, a menu opened)
   var ACTION = 'a[href],area[href],button,input,select,textarea,label,summary,details,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[role="checkbox"],[role="switch"],[onclick],[tabindex],[contenteditable=""],[contenteditable="true"]';
 
   var DEFAULTS = {
@@ -82,6 +90,14 @@
     debugSrc: null,          // URL of swarm-rebuild-debug.js; null = next to this file
     controlsPosition: 'right', // debug control bar: 'right' | 'left' | 'bottom' (mobile: a small tab near a free corner)
     avoid: 'a[href^="tel:"],a[href^="mailto:"],button,[role="button"],input,select,textarea,[data-swarm-avoid]', // debug bar on mobile never covers these
+    exitOn: 'intent',        // what ends the effect: 'intent' = Esc, or a double click / double tap on a spot that is no
+                             // control of the page (clicks, taps and keys on the page's own elements never end it);
+                             // 'esc' = only Esc; 'any' = any click, tap or key (the behaviour of 1.3.0)
+    surface: SURFACE,        // CSS selector of the page's own surfaces (dialogs, [data-swarm-surface]): shown at once,
+                             // never built, never covered; '' = only position:fixed elements and late additions
+    surfaceNames: true,      // also elements named like a consent / cookie banner (id, class, aria-label); false = off
+    pauseOnModal: true,      // a modal with a backdrop covering the screen (newsletter, consent wall) pauses the build
+                             // and hides the overlay until it is closed
     buildVisible: VISIBLE,   // scroll / fast: share of an element (of the viewport for taller ones) that must be in view
                              // before it starts to build (0.1..1); nothing is ever built outside the view
     a11yText: null,          // what screen readers hear while the page is hidden; null = a short sentence in the page's language
@@ -93,25 +109,25 @@
   };
   // read to screen-reader users while the content is hidden (the page's language from <html lang>; English otherwise)
   var A11Y = {
-    en: 'Animated intro: the page builds itself. Press Escape or Tab to show it at once.',
-    hu: 'Animált bevezető: az oldal felépíti magát. Az Esc vagy a Tab billentyűvel azonnal megjelenik.',
-    de: 'Animiertes Intro: Die Seite baut sich auf. Mit Esc oder Tab erscheint sie sofort.',
-    fr: 'Introduction animée : la page se construit. Appuyez sur Échap ou Tab pour l’afficher tout de suite.',
-    es: 'Introducción animada: la página se construye sola. Pulse Esc o Tab para verla de inmediato.',
-    it: 'Introduzione animata: la pagina si costruisce da sola. Premi Esc o Tab per vederla subito.',
-    pt: 'Introdução animada: a página está a construir-se. Prima Esc ou Tab para a ver de imediato.',
-    nl: 'Geanimeerde intro: de pagina bouwt zichzelf op. Druk op Esc of Tab om haar meteen te tonen.',
-    pl: 'Animowane wprowadzenie: strona buduje się sama. Naciśnij Esc lub Tab, aby od razu ją zobaczyć.',
-    cs: 'Animovaný úvod: stránka se sama skládá. Stiskněte Esc nebo Tab a hned se zobrazí.',
-    sv: 'Animerad intro: sidan bygger sig själv. Tryck Esc eller Tabb för att visa den direkt.',
-    ru: 'Анимированное вступление: страница собирается сама. Нажмите Esc или Tab, чтобы сразу её показать.',
-    uk: 'Анімований вступ: сторінка збирається сама. Натисніть Esc або Tab, щоб одразу її показати.',
-    tr: 'Animasyonlu giriş: sayfa kendini oluşturuyor. Hemen görmek için Esc veya Tab tuşuna basın.',
-    ar: 'مقدمة متحركة: الصفحة تبني نفسها. اضغط Esc أو Tab لعرضها فوراً.',
-    he: 'פתיח מונפש: הדף נבנה מעצמו. הקישו Esc או Tab כדי להציג אותו מיד.',
-    ja: 'アニメーション表示中です。Esc キーまたは Tab キーですぐにページを表示します。',
-    zh: '动画开场：页面正在自行构建。按 Esc 或 Tab 键可立即显示页面。',
-    ko: '애니메이션 인트로: 페이지가 스스로 만들어집니다. Esc 또는 Tab 키를 누르면 바로 표시됩니다.'
+    en: 'Animated intro: the page builds itself. Press Escape to show it at once.',
+    hu: 'Animált bevezető: az oldal felépíti magát. Az Esc billentyűvel azonnal megjelenik.',
+    de: 'Animiertes Intro: Die Seite baut sich auf. Mit Esc erscheint sie sofort.',
+    fr: 'Introduction animée : la page se construit. Appuyez sur Échap pour l’afficher tout de suite.',
+    es: 'Introducción animada: la página se construye sola. Pulse Esc para verla de inmediato.',
+    it: 'Introduzione animata: la pagina si costruisce da sola. Premi Esc per vederla subito.',
+    pt: 'Introdução animada: a página está a construir-se. Prima Esc para a ver de imediato.',
+    nl: 'Geanimeerde intro: de pagina bouwt zichzelf op. Druk op Esc om haar meteen te tonen.',
+    pl: 'Animowane wprowadzenie: strona buduje się sama. Naciśnij Esc, aby od razu ją zobaczyć.',
+    cs: 'Animovaný úvod: stránka se sama skládá. Stiskněte Esc a hned se zobrazí.',
+    sv: 'Animerad intro: sidan bygger sig själv. Tryck Esc för att visa den direkt.',
+    ru: 'Анимированное вступление: страница собирается сама. Нажмите Esc, чтобы сразу её показать.',
+    uk: 'Анімований вступ: сторінка збирається сама. Натисніть Esc, щоб одразу її показати.',
+    tr: 'Animasyonlu giriş: sayfa kendini oluşturuyor. Hemen görmek için Esc tuşuna basın.',
+    ar: 'مقدمة متحركة: الصفحة تبني نفسها. اضغط Esc لعرضها فوراً.',
+    he: 'פתיח מונפש: הדף נבנה מעצמו. הקישו Esc כדי להציג אותו מיד.',
+    ja: 'アニメーション表示中です。Esc キーですぐにページを表示します。',
+    zh: '动画开场：页面正在自行构建。按 Esc 键可立即显示页面。',
+    ko: '애니메이션 인트로: 페이지가 스스로 만들어집니다. Esc 키를 누르면 바로 표시됩니다.'
   };
   var MOTION = {
     swarms: true,            // free agents move in small swarms of different sizes (false: one swarm)
@@ -552,7 +568,8 @@
       revealed: new WeakSet(), holeEls: [], holeKey: '',
       seenStats: { initial: { pending: 0, active: 0, done: 0 }, tour: { pending: 0, active: 0, done: 0 }, manual: { pending: 0, active: 0, done: 0 } },
       waits: [], maxAhead: -1, aboveSkips: 0, offSkips: 0, depSkips: 0, aborts: 0, errors: 0, late: 0,
-      startVis: { n: 0, min: 1, sum: 0 }
+      startVis: { n: 0, min: 1, sum: 0 },
+      surfaces: 0, ix: { clicks: 0, keys: 0, escPage: 0, focusBuilds: 0, relayouts: 0, moved: 0, gone: 0, modal: 0, modalT: 0, late: 0 }
     };
     api.active = true;
     var factory = window.SwarmRebuildDebug;
@@ -563,6 +580,9 @@
     if (o.mode === 'tour' && !st.dbg) { warn('mode "tour" needs the debug add-on (?rebuild-debug=1); using "scroll"'); o.mode = 'scroll'; }
     st.touring = o.mode === 'tour';
     st.vmin = clamp(+o.buildVisible || VISIBLE, 0.1, 1);
+    st.surfaceSel = o.surface || '';
+    try { if (st.surfaceSel) document.querySelector(st.surfaceSel); } catch (e) { warn('surface: invalid selector', e); st.surfaceSel = ''; }
+    st.href = location.href.split('#')[0];
     st.speedBase = o.speed || MODE_SPEED[o.mode];
     st.hiddenMax = o.hiddenMax != null && !isNaN(o.hiddenMax) ? o.hiddenMax : HIDDEN_MAX;
     st.mobile = window.innerWidth < 760 || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
@@ -705,20 +725,46 @@
   }
 
   // ----------------------------------------------------------------- exits
-  // Esc, any other key (not a lone modifier) and any click or tap show the finished page at once.
-  // A click on something that was not finished yet is swallowed: the visitor could not see what they hit,
-  // so it must not follow a link or press a button. A click on something already finished goes through.
+  // The visitor uses the page while it builds: clicks, taps and keys on the page's own elements (a consent banner,
+  // a menu, a form, a pop-up, links and buttons) work as usual and the build goes on. The effect ends only on purpose:
+  //   - Esc (unless the page itself uses that Esc: focus in an open dialog, menu or list box, an open modal, or the
+  //     page handled the key); a second Esc within 1.5 s always ends it;
+  //   - a double click / double tap on a spot that is not a link, button, field or one of the page's surfaces.
+  // A single click or tap never ends it (also not on an empty spot or while scrolling). Parts that are not built yet
+  // are hidden, so they cannot be hit by mistake; keyboard focus on such a part builds it at once, so the focus is
+  // always visible. exitOn: 'any' brings back the behaviour of 1.3.0 (any click or key ends the effect).
   function bindEvents(st) {
     function on(t, ev, fn, opt) {
       var g = function (e) { if (S !== st || st.dead) return; try { fn(e); } catch (err) { fail(st, err); } };
       t.addEventListener(ev, g, opt); st.listeners.push([t, ev, g, opt]);
     }
     st.on = on;
+    var anyExit = st.o.exitOn === 'any', dbl = st.o.exitOn !== 'esc' && !anyExit;
     on(window, 'keydown', function (e) {
       if (MODKEY[e.key] || e.isComposing) return;
-      if (e.key !== 'Escape' && st.root.contains(e.target)) return; // keyboard use of the debug bar
-      if (scrollKey(e)) return; // the page scrolls: the build follows, like with the mouse wheel
-      finishNow(st, 'key');
+      if (anyExit) {
+        if (e.key !== 'Escape' && st.root.contains(e.target)) return; // keyboard use of the debug bar
+        if (scrollKey(e)) return;
+        finishNow(st, 'key');
+        return;
+      }
+      if (e.key !== 'Escape' && e.key !== 'Esc') { st.ix.keys++; return; } // the page's own keys (Tab, Enter, Space, typing ...)
+      var t = now();
+      if (st.root.contains(e.target) || t - (st.escAt || -9) < 1.5) { finishNow(st, 'esc'); return; }
+      st.escAt = t;
+      var owned = pageOwnsEsc(e.target);
+      setTimeout(function () {
+        if (S !== st) return;
+        if (owned || e.defaultPrevented) { st.ix.escPage++; return; } // closed the page's dialog / menu: the build goes on
+        finishNow(st, 'esc');
+      }, 0);
+    }, true);
+    // keyboard focus on a part that is not built yet: that part is built at once (the focus ring must be visible)
+    on(document, 'focusin', function (e) {
+      if (anyExit || !st.scanned || st.phase !== 'build') return;
+      var el = e.target;
+      if (!el || el.nodeType !== 1 || st.root.contains(el) || settled(st, el)) return;
+      st.ix.focusBuilds += buildNow(st, el);
     }, true);
     // the mouse pointer (never touch): free agents dodge it and follow it for a moment (opening / finale)
     on(window, 'pointermove', function (e) {
@@ -731,18 +777,56 @@
       m.cx = e.clientX; m.cy = e.clientY; m.t = tt; m.out = false;
     }, { passive: true, capture: true });
     on(document, 'pointerout', function (e) { if (!e.relatedTarget && st.mouse) st.mouse.out = true; }, { passive: true, capture: true });
-    on(window, 'pointerdown', function (e) {
-      if (e.pointerType === 'touch') return; // may be the start of a scroll: a tap ends the effect on "click"
-      if (st.root.contains(e.target)) return;
-      var de = document.documentElement;
-      if (e.clientX >= de.clientWidth || e.clientY >= de.clientHeight) return; // the scrollbar scrolls
-      exitByPointer(st, e);
-    }, true);
-    on(window, 'click', function (e) { if (!st.root.contains(e.target)) exitByPointer(st, e); }, true);
+    on(window, 'scroll', function () { st.scrollAt = now(); }, { passive: true, capture: true });
+    if (anyExit) {
+      on(window, 'pointerdown', function (e) {
+        if (e.pointerType === 'touch') return; // may be the start of a scroll: a tap ends the effect on "click"
+        if (st.root.contains(e.target)) return;
+        var de = document.documentElement;
+        if (e.clientX >= de.clientWidth || e.clientY >= de.clientHeight) return; // the scrollbar scrolls
+        exitByPointer(st, e);
+      }, true);
+      on(window, 'click', function (e) { if (!st.root.contains(e.target)) exitByPointer(st, e); }, true);
+    } else {
+      on(window, 'click', function (e) { if (!st.root.contains(e.target)) st.ix.clicks++; st.probeAt = 0; }, true);
+      // the page may change its layout right after an action (a banner closes, a menu opens): measure again soon
+      on(window, 'pointerup', function () { st.probeAt = 0; st.probeBurst = now() + 1.2; }, { passive: true, capture: true });
+      on(window, 'keyup', function () { st.probeAt = 0; st.probeBurst = now() + 1.2; }, { passive: true, capture: true });
+    }
+    if (dbl) {
+      on(window, 'dblclick', function (e) {
+        // touch makes a dblclick too: ignored, the double tap below decides (it knows about scrolling)
+        if (st.tapExitAt || (e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) || now() - (st.touchAt || -9) < 1) return;
+        if (exitSpot(st, e.target, e.clientX, e.clientY)) finishNow(st, 'dblclick');
+      }, true);
+      // double tap: two short taps close together, not while the page scrolls (a tap that stops a fling is no tap)
+      on(window, 'pointerdown', function (e) {
+        if (e.pointerType !== 'touch' || !e.isPrimary) return;
+        st.touchAt = now();
+        st.tap = { x: e.clientX, y: e.clientY, t: now(), sy: window.scrollY, still: now() - (st.scrollAt || -9) > 0.3 };
+      }, { passive: true, capture: true });
+      on(window, 'pointercancel', function (e) { if (e.pointerType === 'touch') st.tap = null; }, { passive: true, capture: true });
+      on(window, 'pointerup', function (e) {
+        var p = st.tap; st.tap = null;
+        if (e.pointerType !== 'touch' || !p) return;
+        var t = now();
+        if (!p.still || t - p.t > 0.3 || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 12 || Math.abs(window.scrollY - p.sy) > 2) { st.lastTap = null; return; }
+        var q = st.lastTap;
+        st.lastTap = { x: e.clientX, y: e.clientY, t: t };
+        if (q && t - q.t < 0.4 && Math.hypot(e.clientX - q.x, e.clientY - q.y) < 32 && exitSpot(st, e.target, e.clientX, e.clientY)) {
+          st.lastTap = null; st.tapExitAt = t;
+        }
+      }, { passive: true, capture: true });
+      on(window, 'touchend', function (e) {
+        if (!st.tapExitAt) return;
+        if (e.cancelable) e.preventDefault(); // no double-tap zoom
+        finishNow(st, 'dbltap');
+      }, { passive: false, capture: true });
+    }
     on(window, 'resize', function () {
       // a new width reflows the page: show it as it is now instead of animating stale positions
       if (Math.abs(window.innerWidth - st.vw0) > 2) finishNow(st, 'resize');
-      else if (st.dbg) st.dbg.resize(st);
+      else { st.probeAt = 0; if (st.dbg) st.dbg.resize(st); }
     });
     on(document, 'visibilitychange', function () {
       if (document.hidden) { st.hiddenAt = now(); dmsBeat(600000); return; }
@@ -752,25 +836,73 @@
       if (away > st.hiddenMax) finishNow(st, 'hidden');
     });
     on(window, 'pageshow', function (e) { if (e.persisted) finishNow(st, 'pageshow'); });
+    on(window, 'popstate', function () { st.hrefAt = 0; });
     if (st.dbg) st.dbg.bind(st, on);
     if (window.MutationObserver) {
       st.mo = new MutationObserver(function (list) {
         if (S !== st || st.dead) return;
         try {
+          var tree = false;
           for (var i = 0; i < list.length; i++) {
             if (list[i].type !== 'childList') continue;
-            st.dirtySel = true;
-            var add = list[i].addedNodes;
+            var add = list[i].addedNodes, del = list[i].removedNodes;
+            for (var d = 0; d < del.length && !tree; d++) if (del[d].nodeType === 1) tree = true;
+            for (var a = 0; a < add.length && !tree; a++) if (add[a].nodeType === 1) tree = true;
             for (var j = 0; j < add.length; j++) if (add[j].nodeType === 1 && st.scanned) addLate(st, add[j]);
           }
+          // the reveal rules address elements by their place in the DOM: renew them before the next paint
+          if (tree) { rebuildReveals(st); st.probeAt = 0; }
         } catch (err) { fail(st, err); }
       });
       st.mo.observe(document.body, { childList: true, subtree: true });
     }
   }
+  // Esc that belongs to the page: the focus is in an open dialog, menu, list box or expanded control, or a modal is open
+  function pageOwnsEsc(tg) {
+    try {
+      if (tg && tg.closest && tg.closest(PAGE_ESC)) return true;
+      var m = document.querySelectorAll('dialog[open],[aria-modal="true"]');
+      for (var i = 0; i < m.length; i++) { var r = m[i].getBoundingClientRect(); if (r.width > 0 && r.height > 0 && getComputedStyle(m[i]).visibility === 'visible') return true; }
+    } catch (e) { /* ignore */ }
+    return false;
+  }
+  // a double click / tap ends the effect only on a spot that is no control of the page and selects no text
+  function exitSpot(st, tg, x, y) {
+    var el = tg && tg.nodeType === 1 ? tg : tg && tg.parentElement;
+    if (!el || st.root.contains(el)) return false;
+    var de = document.documentElement;
+    if (x >= de.clientWidth || y >= de.clientHeight) return false; // the scrollbar
+    try {
+      if (el.closest(ACTION) || el.closest(PAGE_ESC) || (st.surfaceSel && el.closest(st.surfaceSel))) return false;
+      for (var p = el; p && p !== document.body; p = p.parentElement) if (getComputedStyle(p).position === 'fixed') return false; // a bar, banner or widget
+      var s = window.getSelection && window.getSelection();
+      if (s && !s.isCollapsed && String(s).trim()) return false; // selects a word: normal use
+    } catch (e) { return false; }
+    return true;
+  }
+  // build the part(s) holding el at once (keyboard focus landed there); returns how many items were finished
+  function buildNow(st, el) {
+    var n = 0;
+    for (var i = 0; i < st.layers.length; i++) {
+      var L = st.layers[i];
+      if (L.state === 'done' || !(L.el === el || el.contains(L.el) || L.el.contains(el))) continue;
+      var tk = L.item && L.item.task;
+      if (L.item && L.item.state === 'active' && tk) { abortTask(st, tk, null); n++; }
+      else if (L.item && L.item.state !== 'done') { skipItem(st, L.item, true); n++; }
+    }
+    for (var j = 0; j < st.groups.length; j++) {
+      var g = st.groups[j];
+      if (!g.item || g.item.state === 'done') continue;
+      for (var k = 0; k < g.members.length; k++) {
+        var m = g.members[k];
+        if (!m.done && (m.el === el || m.el.contains(el) || el.contains(m.el))) { memberAbove(st, g.item, m); st.aboveSkips--; n++; }
+      }
+      if (g.members.every(function (x) { return x.done; }) && g.item.state === 'pending') markItemDone(st, g.item);
+    }
+    return n;
+  }
   // Space, arrows, Page Up / Down, Home / End with the focus on the page itself (not in a field, on a link or a
-  // button, and without Ctrl / Alt / Meta) only scroll. Tab, Enter, Esc and all other keys end the effect, so
-  // keyboard users reach the content at once.
+  // button, and without Ctrl / Alt / Meta) only scroll (exitOn: 'any'; otherwise no key but Esc ends the effect).
   function scrollKey(e) {
     if (!SCROLLKEY[e.key] || e.ctrlKey || e.metaKey || e.altKey) return false;
     var tg = e.target;
@@ -812,6 +944,7 @@
   function addLate(st, el) {
     if (SKIP_TAG[el.localName]) return;
     if (++st.late > 300) { finishNow(st, 'mutations'); return; } // the page was replaced (e.g. client-side navigation)
+    st.ix.late++;
     revealEl(st, el, true);
     try { if (getComputedStyle(el).position === 'fixed') st.fixedEls.push(el); } catch (e) { /* ignore */ }
   }
@@ -830,7 +963,7 @@
   }
   function watch(st) {
     var t = now();
-    if (document.hidden || st.paused) { st.lastTick = t; st.progressAt = t; return; }
+    if (document.hidden || st.paused || st.modal) { st.lastTick = t; st.progressAt = t; return; }
     if (t - st.lastTick > LOOP_MAX) { warn('the animation loop stopped, showing the page'); finishNow(st, 'watchdog'); return; }
     if (st.phase === 'scan' && t - st.t0 > 6) { warn('the scan did not finish, showing the page'); finishNow(st, 'watchdog'); return; }
     if (st.phase === 'build' && t - st.progressAt > STALL_MAX && (st.touring || st.visPending > 0)) {
@@ -926,7 +1059,7 @@
       var cs = getComputedStyle(el);
       // not shown by the page now (a closed menu, a carousel slide, a tab, a scroll-reveal element at opacity 0):
       // not animated, but final already, so it appears complete whenever the page shows it during the build
-      if (cs.display === 'none') { offNow.push(el); return null; }
+      if (cs.display === 'none') { offNow.push(el); if (cs.position === 'fixed') st.fixedEls.push(el); return null; } // (a pop-up the page opens later)
       if (cs.display === 'contents') return { el: el, cs: cs, contents: true };
       if (cs.visibility !== 'visible') { natHidden.push(el); return null; } // hidden by the page itself: leave alone
       if (parseFloat(cs.opacity) < 0.05) {
@@ -939,6 +1072,7 @@
       if (cs.position === 'sticky') st.stickyEls.push(el);
       if ((exSel && el.matches(exSel)) || (inSel && el.matches(inSel)) || cs.position === 'fixed') return { el: el, instant: true };
       var r = el.getBoundingClientRect();
+      if (isSurface(st, el, r, vw, vh)) { st.surfaces++; st.fixedEls.push(el); return { el: el, instant: true }; }
       if (r.width < 1 || r.height < 1) {
         if (el.children.length && cs.overflow === 'visible') return { el: el, cs: cs, contents: true };
         return null;
@@ -989,7 +1123,7 @@
       if (CONTROL[name]) { addLayer(el, 'control', R, true); return; }
       var nDesc = el.getElementsByTagName('*').length;
       var holdsInstant = false;
-      try { holdsInstant = !!((inSel && el.querySelector(inSel)) || (exSel && el.querySelector(exSel))); } catch (e) { /* ignore */ }
+      try { holdsInstant = !!((inSel && el.querySelector(inSel)) || (exSel && el.querySelector(exSel)) || (st.surfaceSel && el.querySelector(st.surfaceSel))); } catch (e) { /* ignore */ }
       if (holdsInstant) { if (own) addLayer(el, 'box', R, false, { bg: alphaOf(cs.backgroundColor) > 0.03 }); walk(el, clip); return; }
       if (own && !bgUrl(cs) && txt && txt.length <= 40 && nDesc <= 8 && R.w <= 420 && R.h <= 90 && !bigMedia(el)) {
         addLayer(el, 'button', R, true);
@@ -1025,7 +1159,7 @@
           try { if (it.el.matches(o.sectionSelector)) return; } catch (e) { /* ignore */ }
           // a row holding a phone link (or another instant / excluded element) is never a clone: it is walked,
           // so that element is shown at once instead of waiting for the clone animation
-          try { if ((inSel && it.el.querySelector(inSel)) || (exSel && it.el.querySelector(exSel))) return; } catch (e) { /* ignore */ }
+          try { if ((inSel && it.el.querySelector(inSel)) || (exSel && it.el.querySelector(exSel)) || (st.surfaceSel && it.el.querySelector(st.surfaceSel))) return; } catch (e) { /* ignore */ }
           var sig = it.el.localName + '|' + (it.el.getAttribute('class') || '') + '|' + it.el.childElementCount;
           (bySig[sig] = bySig[sig] || []).push(it);
         });
@@ -1065,6 +1199,17 @@
     st.offNow = offNow.length;
     // elements the page hides itself keep their own visibility, also if the dead-man switch shows the page
     natHidden.forEach(function (el) { st.reveals.push({ el: el, tree: true, exempt: true }); insertReveal(st, el, true, true); });
+  }
+
+  // A surface of the page itself (a consent or cookie banner, a dialog), also when it sits in the page flow (a bar at the
+  // top that pushes the content down): shown at once and never built, so it can be used from the first moment.
+  // Only small enough ones with a control inside: a whole section about cookies on a bakery's page is content.
+  function isSurface(st, el, r, vw, vh) {
+    try {
+      if (!(st.surfaceSel && el.matches(st.surfaceSel)) && !(st.o.surfaceNames !== false && SURFACE_NAME.test((el.id || '') + ' ' + (el.getAttribute('class') || '') + ' ' + (el.getAttribute('aria-label') || '')))) return false;
+      if (r.width * r.height > vw * vh * 0.6 || r.height > vh * 0.8) return false;
+      return el.localName === 'dialog' || !!el.querySelector('button,a[href],input,select,[role="button"],[tabindex]');
+    } catch (e) { return false; }
   }
 
   // ------------------------------------------------------------------- plan
@@ -1222,7 +1367,7 @@
     return out;
   }
   function updateHoles(st, t, vw, vh) {
-    if (t > (st.holeAt || 0)) { st.holeAt = t + 0.25; st.holeEls = holeEls(st); }
+    if (t > (st.holeAt || 0)) { st.holeAt = t + 0.25; st.holeEls = holeEls(st); st.modalEl = st.o.pauseOnModal !== false ? findModal(st, vw, vh) : null; }
     var rs = [], key = '';
     for (var i = 0; i < st.holeEls.length; i++) {
       var r = st.holeEls[i].getBoundingClientRect();
@@ -1247,6 +1392,131 @@
     st.holes = rs;
     st.deco.style.clipPath = clipFor(rs, vw, vh);
   }
+  // A modal of the page with a backdrop (a fixed layer over the whole screen with its own colour or blur, above the
+  // content, holding the dialog), or an open modal <dialog>: the visitor deals with it first.
+  function findModal(st, vw, vh) {
+    var c = st.fixedEls.slice();
+    try {
+      var d = document.querySelectorAll('dialog[open],[aria-modal="true"]');
+      for (var k = 0; k < d.length; k++) {
+        c.push(d[k]);
+        for (var p = d[k].parentElement; p && p !== document.body; p = p.parentElement) if (getComputedStyle(p).position === 'fixed') { c.push(p); break; }
+      }
+    } catch (e) { /* ignore */ }
+    for (var i = 0; i < c.length; i++) {
+      var el = c[i];
+      if (!el.isConnected) continue;
+      var isDlg = false;
+      try { isDlg = el.localName === 'dialog' && el.matches(':modal'); } catch (e) { /* ignore */ }
+      var r = el.getBoundingClientRect();
+      if (!isDlg && (r.width * r.height < vw * vh * 0.85 || !el.firstElementChild)) continue;
+      var cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility !== 'visible' || parseFloat(cs.opacity) < 0.05) continue;
+      if (isDlg) return el;
+      if (parseInt(cs.zIndex, 10) < 0) continue;
+      if (alphaOf(cs.backgroundColor) >= 0.15 || (cs.backdropFilter && cs.backdropFilter !== 'none') || (cs.webkitBackdropFilter && cs.webkitBackdropFilter !== 'none')) return el;
+    }
+    return null;
+  }
+  // while a modal is open the build waits and the overlay is hidden; afterwards everything goes on where it was
+  function modalPause(st, t, vw, vh) {
+    var m = st.modalEl;
+    if (m && !m.isConnected) m = st.modalEl = null;
+    if (m && !st.modal) { st.modal = { t0: t }; st.ix.modal++; st.deco.style.visibility = 'hidden'; }
+    if (!st.modal) return false;
+    if (m) return true;
+    var d = t - st.modal.t0;
+    st.ix.modalT += d;
+    st.modal = null;
+    st.deco.style.visibility = '';
+    st.active.forEach(function (tk) { tk.wall0 += d; if (tk.lastT != null) tk.lastT += d; });
+    st.t0 += d; if (st.buildStart) st.buildStart += d; if (st.dispatchAt) st.dispatchAt += d;
+    if (st.openAt) st.openAt += d;
+    st.agents.forEach(function (a) { if (a.idleAt) a.idleAt += d; });
+    st.probeAt = 0; progress(st);
+    return false;
+  }
+
+  // ------------------------------------------- layout changes made by the page
+  // The page may move its content while it is built: a consent bar at the top closes, a menu or an accordion opens,
+  // an image or a font loads late. A few elements (spread over the page, and those being built) are checked every
+  // PROBE_DT (more often right after a click or key); when one moved, every part is measured again. Parts waiting
+  // to be built simply use the new place; a part being built at that moment is finished at once (no animation at a
+  // stale place); a part the page removed is dropped. The overlay only reads the layout, so nothing moves because of it.
+  function probe(st, t) {
+    if (!st.scanned || t < (st.probeAt || 0)) return;
+    st.probeAt = t + (t < (st.probeBurst || 0) ? 0.05 : PROBE_DT);
+    var href = location.href.split('#')[0];
+    if (href !== st.href) { finishNow(st, 'route'); return; } // client-side navigation (SPA): show the new page as it is
+    var sx = window.scrollX, sy = window.scrollY, sh = (document.scrollingElement || document.documentElement).scrollHeight;
+    var moved = sh !== st.probeH;
+    if (!st.probes) {
+      // (not inside a sticky element: it moves with the scrolling by itself)
+      var flow = st.layers.filter(function (L) { return !inSticky(st, L.el); }), n = flow.length, k = Math.max(1, Math.ceil(n / 12));
+      st.probes = [];
+      for (var i = 0; i < n; i += k) st.probes.push(flow[i]);
+    }
+    var list = st.probes.concat(st.active.map(function (tk) { return tk.it.L || (tk.it.g && tk.it.g.master); }));
+    for (var j = 0; j < list.length && !moved; j++) {
+      var L = list[j];
+      if (!L || (L.sticky == null ? (L.sticky = inSticky(st, L.el)) : L.sticky)) continue;
+      var R = L.R || L, el = L.el;
+      if (!el.isConnected) { moved = true; break; }
+      var r = el.getBoundingClientRect();
+      moved = Math.abs(r.left + sx - R.x) > 0.5 || Math.abs(r.top + sy - R.y) > 0.5 || Math.abs(r.width - R.w) > 0.5 || Math.abs(r.height - R.h) > 0.5;
+    }
+    st.probeH = sh;
+    if (moved && st.probeInit) relayout(st);
+    st.probeInit = true;
+  }
+  function inSticky(st, el) {
+    for (var i = 0; i < st.stickyEls.length; i++) if (st.stickyEls[i].contains(el)) return true;
+    return false;
+  }
+  function relayout(st) {
+    var sx = window.scrollX, sy = window.scrollY, gone = 0, open = 0, moved = 0;
+    function box(el) { var r = el.getBoundingClientRect(); return { x: r.left + sx, y: r.top + sy, w: r.width, h: r.height }; }
+    function differs(a, b) { return Math.abs(a.x - b.x) > 0.5 || Math.abs(a.y - b.y) > 0.5 || Math.abs(a.w - b.w) > 0.5 || Math.abs(a.h - b.h) > 0.5; }
+    function stop(it) { if (it && it.state === 'active' && it.task && !it.task.finished) abortTask(st, it.task, null); }
+    for (var i = 0; i < st.layers.length; i++) {
+      var L = st.layers[i];
+      if (L.state !== 'done') open++;
+      if (!L.el.isConnected) {
+        if (L.state === 'done') continue;
+        gone++;
+        stop(L.item); stop(L.blockItem);
+        if (L.item && L.item.state !== 'done') skipItem(st, L.item, true);
+        continue;
+      }
+      var R = box(L.el);
+      if (!differs(R, L)) continue;
+      L.x = R.x; L.y = R.y; L.w = R.w; L.h = R.h;
+      if (L.state === 'done') continue;
+      moved++;
+      [L.item, L.blockItem].forEach(function (it) { if (it) { it.y = R.y; it.h = R.h; stop(it); } });
+      if (L.sel) L.sel.set(L.x, L.y, L.w, L.h);
+      if (L.ph) L.ph.set(L.x, L.y, L.w, L.h);
+    }
+    st.groups.forEach(function (g) {
+      var it = g.item, ch = false;
+      [g.master].concat(g.members).forEach(function (m) {
+        if (!m.el.isConnected) { if (m !== g.master && !m.done) { ch = true; if (it) memberAbove(st, it, m); st.aboveSkips--; gone++; } return; }
+        var R = box(m.el);
+        if (differs(R, m.R)) { m.R = R; ch = true; }
+      });
+      if (!it || it.state === 'done' || !ch) return;
+      moved++;
+      it.y = g.master.R.y; it.h = g.master.R.h;
+      stop(it);
+      if (it.state === 'pending' && g.members.every(function (m) { return m.done; })) markItemDone(st, it);
+    });
+    st.tails.forEach(function (tl) { if (tl.el.isConnected) { var R = box(tl.el); tl.b = R.y + R.h; } });
+    st.docH = maxScroll() + window.innerHeight;
+    st.ix.relayouts++; st.ix.moved += moved; st.ix.gone += gone;
+    // most of what was still to build is gone: the page was replaced (client-side navigation without a new URL)
+    if (open > 8 && gone > open * 0.5) finishNow(st, 'route');
+  }
+
   // Always a plain inset() when possible (a rectangle clip is cheap; a path / polygon clip makes the browser mask the
   // whole animated overlay every frame, which costs ~25 % fps without a GPU). Each hole is covered by the cheapest band
   // from it to a viewport edge (a corner button -> a strip along the bottom edge, etc.); the overlay is simply not drawn
@@ -1275,12 +1545,14 @@
     if (st.paused) return;
     if (st.fault) fireFault(st, t);
     if (st.dead) return;
-    if (st.phase === 'build') { st.frames.push(dt); liteWatch(st, dt); }
+    if (st.phase === 'build' && !st.modal) { st.frames.push(dt); liteWatch(st, dt); }
     if (st.mouse && t - st.mouse.t > 0.05) { var mk2 = Math.exp(-dt * 10); st.mouse.vx *= mk2; st.mouse.vy *= mk2; }
     if (st.dirtySel) { st.dirtySel = false; rebuildReveals(st); }
     var vw = window.innerWidth, vh = window.innerHeight;
     if (st.dbg) st.dbg.frame(st, t); // reads layout before this frame's writes
     updateHoles(st, t, vw, vh);
+    if (st.phase !== 'done' && st.o.pauseOnModal !== false && modalPause(st, t, vw, vh)) return;
+    if (st.phase === 'build') { probe(st, t); if (S !== st) return; }
 
     if (st.phase === 'scan') {
       openingStep(st, t, dt, vw, vh);
@@ -1358,7 +1630,9 @@
       if (st.touring) st.dbg.dispatch(st, t); else dispatchFollow(st, t);
     }
     for (var i = st.active.length - 1; i >= 0; i--) {
-      var tk = st.active[i], bx = taskBox(tk);
+      var tk = st.active[i];
+      if (tk.finished) { st.active.splice(i, 1); continue; } // completed outside the loop (focus, layout change)
+      var bx = taskBox(tk);
       if (bx.y + bx.h < cut) { st.aboveSkips++; abortTask(st, tk, null); }
       else if (t - tk.wall0 > TASK_MAX) abortTask(st, tk, 'a task took longer than ' + TASK_MAX + ' s');
       else if (!st.touring && (bx.y >= sy + vh || bx.y + bx.h <= sy)) { st.offSkips++; abortTask(st, tk, null); } // scrolled out of view: final at once, out of sight
@@ -2491,6 +2765,7 @@
       inView: st.phase === 'build' ? inViewWork(st) : null, errors: st.errors, holes: (st.holes || []).length,
       lite: !!st.lite, liteFps: !!st.liteFps, colors: st.o.colors, mouseOn: !!st.mouseOn, focus: st.focusInfo, diff: st.diff || null, swarms: (st.swarms || []).map(function (s) { var c = 0; st.agents.forEach(function (a) { if (a.active && a.swarm === s) c++; }); return c; }),
       mouse: { dodges: st.mz.dodges, follows: st.mz.follows.length, minD: st.mz.minD, following: st.mfollow },
+      exitOn: st.o.exitOn, surfaces: st.surfaces, modal: !!st.modal, interact: assign({}, st.ix),
       fault: st.fault ? { kind: st.fault.kind, fired: st.fault.fired, task: st.fault.task || null } : null
     };
   }

@@ -1,6 +1,6 @@
 ---
 name: page-swarm-rebuild
-description: Adds the "page rebuilds itself" effect to an existing website (plain HTML, React or Next.js) - a swarm of colourful agent cursors hides the finished page, then rebuilds it layer by layer (selection frames with size labels, typing, image reveals, clone-and-rewrite of repeated items, rulers and guides), following the visitor's scrolling, with natural motion (swarms around a focus element, a spring-like finale, gravity-bent paths, mouse curiosity). Visitors see no controls; any click or key (except scroll keys) shows the finished page at once; reduced motion means no effect. No sound. A separate debug add-on (control bar, auto-scrolling tour, test hooks) exists for testing and recordings. Use when the user asks for a cursor swarm / agents rebuilding the page, a "Figma multiplayer building the site" intro, a "page builds itself" or "rebuild animation" effect, or mentions page-swarm-rebuild.
+description: Adds the "page rebuilds itself" effect to an existing website (plain HTML, React or Next.js) - a swarm of colourful agent cursors hides the finished page, then rebuilds it layer by layer (selection frames with size labels, typing, image reveals, clone-and-rewrite of repeated items, rulers and guides), following the visitor's scrolling, with natural motion (swarms around a focus element, a spring-like finale, gravity-bent paths, mouse curiosity). Visitors see no controls and can use the page while it builds (consent banners, menus, forms, pop-ups work and the build goes on); Esc or a double click / tap on an empty spot shows the finished page at once; reduced motion means no effect. No sound. A separate debug add-on (control bar, auto-scrolling tour, test hooks) exists for testing and recordings. Use when the user asks for a cursor swarm / agents rebuilding the page, a "Figma multiplayer building the site" intro, a "page builds itself" or "rebuild animation" effect, or mentions page-swarm-rebuild.
 ---
 
 # page-swarm-rebuild
@@ -50,20 +50,45 @@ and this file disagree, this file wins (product decisions were made after the de
 - **Visitors never see a control bar and never get an automatic scroll.** The bar and the tour live in the debug
   add-on, loaded only with `?rebuild-debug=1` or `debug: true`. `mode: 'tour'` without the add-on falls back to
   `scroll`.
-- **Always a way out without visible controls:** Esc, Tab, Enter, any other key (a lone Shift/Ctrl/Alt/Meta
-  excepted) and any click or tap show the finished page at once, with no animation and no layout shift.
-  `prefers-reduced-motion` means no effect at all (WCAG 2.2.2).
-- **Scroll keys scroll:** Space, the arrows, Page Up / Down and Home / End (with the focus on the page itself, without
-  Ctrl / Alt / Meta) drive the build exactly like the mouse wheel. On a focused link, button or field, or with a
-  modifier, they end the effect like any other key. Tab, Enter and Esc always end it, so keyboard users reach the real
-  content (and its focus order) at their first Tab.
-- **The click that ends the effect never does something the visitor did not see:** if it lands on content that was not
-  finished yet (hidden, or still being built), it is swallowed (`preventDefault` + `stopPropagation`, on mouse already at
-  `pointerdown`, so no focus, no link, no button action). If it lands on finished content (visible, nothing inside it or
-  revealing it still in progress — e.g. a phone link, which is shown from the start, or a built button), it goes through
-  as a normal click and the effect ends at the same time. Reason: swallowing every click would make a visible "Call us"
-  link fail on the first tap; letting every click through would follow links the visitor never saw.
+- **Visitors can use the page while it builds.** Clicks, taps and keys on the page's own elements never end the
+  effect: a consent / cookie banner, a pop-up or modal (newsletter, notification), a hamburger or drop-down menu, a
+  language switcher, form fields and buttons, a chat widget, links and buttons in general — with the mouse, by touch
+  and with the keyboard (Tab, Enter, Space, typing). The action works as usual and the build goes on. Reason: most
+  real sites open with a consent banner, and visitors press "Accept" at once; in 1.3.0 that click ended the effect after
+  ~10 % of it. Parts that are not built yet are hidden (`visibility: hidden`), so they cannot be hit by mistake: a click
+  there does nothing. Keyboard focus that lands on a part not built yet builds that part at once, so the focus is
+  always visible.
+- **Ending it is deliberate (`exitOn`, default `'intent'`), always possible without visible controls:**
+  - **Esc** ends it at once (the finished page, no animation, no layout shift) — unless the page itself uses that Esc:
+    the focus is in an open dialog, menu, list box or expanded control, an open modal is on screen, or the page handled
+    the key (`preventDefault`). Then the page's dialog closes and the build goes on; a second Esc within 1.5 s always
+    ends the effect. This is also the way out for keyboard and screen-reader users (the status message says so).
+  - **A double click / double tap on an empty spot** (not a link, button, field, label, dialog or fixed bar, and not on
+    text: a double click on text selects a word, which is normal use) ends it. A single click or tap never does, nor do
+    two slow taps or taps while the page is scrolling (a tap that stops a fling). The double tap does not zoom.
+  - `exitOn: 'esc'` = only Esc; `exitOn: 'any'` = the behaviour of 1.3.0 (any click, tap or key except scroll keys ends
+    it; a click on unfinished content is swallowed).
+  - `prefers-reduced-motion` means no effect at all (WCAG 2.2.2); a new width (rotation, resize) shows the finished page.
+- **Scroll keys scroll:** Space, the arrows, Page Up / Down and Home / End drive the build exactly like the mouse wheel.
   Touch scrolling and the scrollbar never end the effect (scrolling is how the build is driven).
+- **The page's own surfaces are never built and never covered:** `position: fixed` elements, dialogs (`<dialog>`,
+  `role="dialog"` / `"alertdialog"`, `aria-modal`), `[data-swarm-surface]` and elements named like a consent banner
+  (id / class / aria-label with consent, gdpr, ccpa, cookie-banner, cookie-bar, cookie-notice ...; not `cookie-card`)
+  are shown at once, also a bar at the top in the page flow; everything a script adds during the build (a consent
+  manager that injects itself late, a chat widget) is shown at once and cut out of the overlay when fixed. Options
+  `surface` (selector) and `surfaceNames` (false = no name matching).
+- **A modal with a backdrop pauses the build** (`pauseOnModal`): a fixed layer over the whole screen with its own colour
+  or blur that holds a dialog (consent wall, newsletter pop-up), or an open modal `<dialog>`. The overlay is hidden and
+  the build waits; when it closes, everything goes on where it was. A consent wall at load holds the opening until it
+  is answered.
+- **The page may move while it builds:** a consent bar at the top closes and the content moves up, a menu or accordion
+  opens, a font or image loads late. A few elements are checked every 0.15 s (every 0.05 s right after a click or key);
+  when one moved, every part is measured again: parts waiting to be built use the new place, a part being built at that
+  moment is finished at once (never animated at a stale place), parts the page removed are dropped. The overlay only
+  reads the layout, so nothing jumps and there is no layout shift (CLS 0 in every interact check).
+- **Client-side navigation (SPA):** a new URL (`pushState`, `popstate`; a hash change does not count) or most of the
+  unbuilt content removed ends the effect: the new page is shown complete at once, nothing stays hidden. Reason: the
+  new view was never scanned; restarting would hide it again after the visitor asked for it.
 - **No sound.** The module has no audio code.
 
 ## Modes
@@ -157,8 +182,8 @@ Arabic-Indic digits, a Hebrew quote), `lang-ja` (Japanese), `lang-emoji`. Known 
 - **Accessibility:** the overlay is `aria-hidden` and its copies are `inert` (nothing focusable); while the content
   is hidden, screen readers get one status message in the page's language (`<html lang>`: en, hu, de, fr, es, it, pt,
   nl, pl, cs, sv, ru, uk, tr, ar, he, ja, zh, ko; `a11yText` overrides), placed outside `<body>` and removed at the end;
-  the first Tab ends the effect and focus lands exactly where it would without it; `prefers-reduced-motion` means no
-  effect; any key or click ends it (scroll keys excepted).
+  Tab moves the focus exactly where it would without the effect (no focus trap) and the focused part is built at once;
+  Esc ends the effect; `prefers-reduced-motion` means no effect.
 
 ## Compatibility (tested on the local test pages; real sites cannot be reached from the test machine)
 
@@ -168,14 +193,15 @@ Arabic-Indic digits, a Hebrew quote), `lang-ja` (Japanese), `lang-emoji`. Known 
 | Next.js App Router, Pages Router | works | test app built and verified; StrictMode-safe |
 | React + Vite | works (installer tested, page not built here) | own detached root, starts after mount |
 | Bootstrap 5 (npm), utility CSS | works | `tests/pages/bootstrap` |
-| Single-page apps (client routes) | works on the first view | content rendered before the scan is built; content added later is shown at once; a route change is a click, so it ends the effect; more than 300 added nodes end it too |
+| Single-page apps (client routes) | works on the first view | content rendered before the scan is built; content added later is shown at once; a route change (new URL, or most of the content replaced) shows the new page complete and ends the effect (`--route` check) |
 | Sticky header | works | built first, then cut out of the overlay |
 | Fixed bars, chat bubbles, back-to-top | works | shown at once, never covered (pixel-tested) |
-| Cookie / consent banners (static or added by a script later) | works | shown at once, never covered, the first click works and ends the effect (`--consent` check) |
+| Cookie / consent banners: fixed bar, bar at the top in the page flow, dialog on a backdrop, added by a script later | works | shown at once, never covered, the first click / tap / Enter works and the build goes on; a bar that closes and moves the content is followed (no jump, CLS 0); a backdrop pauses the build (`interact` checks on `tests/pages/bakery` in all four forms, `law`, `accounting`) |
+| Menus, language switchers, forms, chat widgets used during the build | works | the action works, the build goes on; focus builds the focused part at once (`interact`) |
 | Web fonts (`@font-face`) | works | the scan waits for `document.fonts.ready` (at most 0.7 s) |
 | Lazy-loaded images | works | sizes come from the layout; give images `width` / `height` (the page itself needs them against layout shift anyway) |
 | iframes (maps, players), `<video>`, background video | works | revealed as one picture, their content is not animated; videos keep playing underneath |
-| Carousels, tabs, menus, modals, accordions | works | parts not shown at the scan (`display: none`) are final at once, so a slide that comes in during the build is complete |
+| Carousels, tabs, menus, modals, accordions | works | parts not shown at the scan (`display: none`) are final at once, so a slide that comes in during the build is complete; a menu or accordion that pushes the content is followed (re-measure) |
 | Scroll-reveal libraries (AOS-like, opacity 0 until in view) | works | sections in the page flow are built like the rest (the page fades them in about when they are built); small or floating ones at opacity 0 (tooltips) are final at once |
 | Dark mode (system setting, toggle) | works | the overlay takes the page background; verify with `--color-scheme dark` |
 | Very long pages | works | demo 6.6, accounting 6.8, law (phone) 8.3 viewport heights |
@@ -208,7 +234,10 @@ Arabic-Indic digits, a Hebrew quote), `lang-ja` (Japanese), `lang-emoji`. Known 
 - **Background tab:** the switch is paused while the tab is hidden; back within 30 s the build continues, later the
   finished page is shown. Returning via the back/forward cache shows the finished page.
 - **Content added after the scan** (e.g. a cookie banner inserted by a script) is shown at once, not animated; more than
-  300 added elements (a client-side page change) show the finished page.
+  300 added elements, a new URL or most of the unbuilt content removed (a client-side page change) show the finished page.
+- **Layout changes by the page** (a banner closes, a menu opens): re-measured, see Product decisions; a part being built
+  at that moment is finished at once, so nothing is ever animated at a stale place.
+- **A modal with a backdrop** pauses the build and hides the overlay; the watchdogs pause with it.
 - **Fixed elements:** the overlay never draws over `position: fixed` elements (and sticky ones once they are built):
   they are cut out of it with `clip-path: inset()`: each one is covered by the narrowest strip from it to a viewport
   edge, so a corner button removes a strip along that edge (an even-odd `path()` only when the strips would hide more
@@ -335,6 +364,10 @@ Working example: `tests/pages/nextjs/`.
 | `avoid` | `a[href^="tel:"],a[href^="mailto:"],button,[role="button"],input,select,textarea,[data-swarm-avoid]` | mobile debug tab never covers these (nor fixed elements and button-like links) |
 | `buildVisible` | `0.6` | scroll / fast: share of an element (of the screen for taller ones) that must be in view before it starts (0.1..1). Measured: every start 60-100 % in view (median 100 %), the same build time with 0.5..0.8; higher values leave a part at the bottom edge empty longer while the visitor rests |
 | `a11yText` | in the page's language | the status message screen readers get while the page is hidden |
+| `exitOn` | `'intent'` | what ends the effect: `'intent'` = Esc (not when the page uses it for its own dialog / menu; Esc twice always) or a double click / double tap on an empty spot; `'esc'` = only Esc; `'any'` = any click, tap or key except scroll keys (1.3.0) |
+| `surface` | `dialog,[role="dialog"],[role="alertdialog"],[aria-modal="true"],[data-swarm-surface]` | the page's own surfaces: shown at once, never built, never covered (also in the page flow, when small enough and holding a control) |
+| `surfaceNames` | `true` | also elements whose id / class / aria-label reads like a consent banner (consent, gdpr, ccpa, cookie-banner, cookie-bar, cookie-notice ...); `false` = off |
+| `pauseOnModal` | `true` | a modal with a backdrop (or an open modal `<dialog>`) pauses the build and hides the overlay until it closes |
 | `focus` | `null` (auto) | selector or element the opening / finale swarms gather around (see Motion); ask the developer |
 | `motion` | see below | merged key by key: `swarms` (true), `mouse` (true), `arc` (1 = gravity sag, 0 = straight), `difficulty` (1, 0 = all tasks alike), `spring` (1 = finale overshoot, 0 = none), `lite` (`'auto'` \| true \| false) |
 | `onDone` | `null` | callback `{elapsed, layers, agents}` or `{skipped: true, reason}` |
@@ -360,13 +393,23 @@ node $S/scripts/verify.cjs --url http://localhost:3000/ --mode scroll --checks r
 node $S/scripts/verify.cjs --url http://localhost:3000/ --mode tour --checks record --video ref.mp4
 ```
 Other verify options: `--consent "<selector>"` (a consent banner's button must work at the first click during the
-build), `--color-scheme dark`, `--dom-volatile "class,style"` (attributes the page changes by itself), `--settle "<js>"`
+build and the build must go on), `--menu "<toggle>|<panel>"` / `--menu-mobile`, `--field "<selector>"`,
+`--popup "<open>|<close>"`, `--anchor "<in-page link>"`, `--route "<client-side route link>"`, `--late` (the banner is added
+by a script later) for the `interact` group, `--module <file>` (serve another module file, e.g. an older version, for
+comparisons), `--color-scheme dark`, `--dom-volatile "class,style"` (attributes the page changes by itself), `--settle "<js>"`
 (stop a carousel before the "looks identical" screenshots; videos are always paused at their first frame).
 `--checks` (comma list): `record` (one recorded run in `--mode`), `extra` (reduced motion, debug ✕ and Replay, no-JS),
 `product` (no bar / no auto-scroll / add-on not loaded without the flag in all three modes, the flag shows the bar,
-default mode scroll, scroll keys scroll and drive the build, Esc / letter / Tab / Enter / Ctrl+arrow end the effect at
-once without layout shift while a lone Shift does not, a click
-or tap on unfinished content ends it without navigating, a click on finished content (`--interact`) works and ends it),
+default mode scroll, scroll keys scroll and drive the build, Esc ends the effect at once without layout shift while
+letters / Tab / Enter / Ctrl+arrow / a lone Shift do not, a click or tap on unfinished content does nothing (no
+navigation) and the build goes on, a click on finished content (`--interact`) works and the build goes on),
+`interact` (the visitor uses the page while it builds: the consent button clicked / tapped at 0.5 s, 2 s and the middle
+of the build works at once, the choice is stored, the build goes on and ends with the same DOM as the page after the
+same click without the effect, CLS 0; Tab to the button + Enter / Space; menu, form field, pop-up with a backdrop
+(the build waits, Esc closes the pop-up and not the effect), in-page link (view filled within 2.5 s), client-side route
+(the new page complete at once); one click / tap, slow taps, taps while scrolling do not end it; a double click / tap on
+an empty spot and Esc do; reduced motion still switches it off), `seen` (how much of the build a visitor sees who
+presses Accept at 0.5 s / 2 s; with `--module` also for an older version),
 `protect` (everything above the view final during fast scrolling, faults `task` / `stall` / `loop` / `die`, resize,
 background tab), `visible` (scroll mode builds only what is in view: every start >= `buildVisible` in view, no
 working agent outside the view, no task out of view, fill time after wheel bursts / Page Down / End <= 2 s on average,
@@ -376,9 +419,9 @@ perfect circle, the finale's spring pull with overshoot and slow circling, mouse
 36 px, shorter follows when the pointer leaves faster, moves do not end the effect; gravity sag of horizontal moves and
 none of vertical ones; difficulty: bigger parts take longer, at most ~4x; contact sheets `sheet-opening.jpg` /
 `sheet-finale.jpg`), `manual` (debug tour interrupted by wheel scrolling, then a scroll-mode run),
-`a11y` (crawlers get the finished page, overlay aria-hidden with nothing focusable, status message, the first Tab ends
-it without a focus trap), `text` (typing in any language: every frame, the typed part of every text ends on a character boundary, and the
-caret sits after the last typed character on its writing side), `all` = record,extra,product,protect,fixed,visible,text,a11y,motion. `--interact "<selector>"` also clicks an element after the effect and
+`a11y` (crawlers get the finished page, overlay aria-hidden with nothing focusable, status message, the first Tab lands
+where it would without the effect with the focused part visible, Esc then ends it), `text` (typing in any language: every frame, the typed part of every text ends on a character boundary, and the
+caret sits after the last typed character on its writing side), `all` = record,extra,product,interact,protect,fixed,visible,text,a11y,motion. `--interact "<selector>"` also clicks an element after the effect and
 expects its text to change (e.g. a React counter). Every run has a hard time limit (`--timeout`, default 400 s).
 
 All checks must pass: run to the end, monotonic counters, auto-scroll ends at the bottom (tour), fps >= `--min-fps`
@@ -446,13 +489,17 @@ and where the backup is (`legacy/<stamp>-install/backup.txt`).
   completed and cleaned up on its own.
 - **Debug control bar**: fixed, moved with `transform` only (never a layout shift); repositions only when its spot
   gets covered by a fixed element (and on mobile by phone links / buttons). Its styles come with the add-on.
-- **Accessibility**: `prefers-reduced-motion` skips everything; Esc / Tab / Enter / any non-scroll key / click shows the finished page
-  immediately; the overlay is `aria-hidden`. While the effect runs, content not yet built is also hidden from screen
+- **Accessibility**: `prefers-reduced-motion` skips everything; Esc shows the finished page immediately; Tab focus
+  builds the focused part at once; the overlay is `aria-hidden`. While the effect runs, content not yet built is also hidden from screen
   readers (it is `visibility: hidden`).
 
 ## Known limitations
-- Content not yet built is hidden from screen readers too (see above); Tab, Enter, Esc and every other non-scroll key
-  end the effect, so keyboard and screen-reader users get the page at their first such key press.
+- Content not yet built is hidden from screen readers too (see above); the status message tells them to press Esc,
+  which shows the page at once, and Tab focus builds the focused part at once.
+- A modal with a backdrop that is open at load (a consent wall) holds the opening until it is answered; behind it the
+  page's background is empty (it is not built yet) instead of the dimmed page.
+- A layout change while a part is being built finishes that part at once (a small pop instead of an animation at a
+  stale place).
 - Pages that scroll an inner container (not the window): the build follows the window only; use `fast` or exclude it.
 - The overlay is not drawn in the strip between a fixed element and the nearest viewport edge (e.g. along the bottom
   edge next to a floating button), so agents passing there disappear for a moment. Fixed elements that cover more than half of the viewport are not cut out (they are treated as

@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Morning Crumb Bakery &amp; Café</title>
+<!-- Fictional test page for page-swarm-rebuild: a bakery-café that visitors use while the effect runs. A consent banner
+     in one of four forms (?banner=top: a bar at the top in the page flow that pushes the content down; modal: a dialog
+     in the middle with a dark backdrop; bottom: a fixed bar at the bottom; late: a consent manager that a script adds
+     1.2 s after load; none), a sticky header with a drop-down (desktop) and a hamburger menu that pushes the content
+     (mobile), a language switcher, in-page anchor links, a product list named "cookie-card" (content, not a banner),
+     an order form, an accordion, a newsletter pop-up with a backdrop (button, or ?popup=auto after 5 s; Esc closes it)
+     and a chat widget added after 2 s. Every choice is stored (localStorage + cookie), like on a real site. -->
+<script>(function(d,w){w.__swarmRebuildSnippet=1;try{var q=new URLSearchParams(location.search).get('rebuild');if(q==='0')return;if(/bot\b|crawl|spider|slurp|mediapartners|inspectiontool|facebookexternalhit|embedly|preview|whatsapp|telegram|discord|semrush|ahrefs|yandex|baidu|duckduck|petal|bytespider/i.test(navigator.userAgent||''))return;if(w.matchMedia&&w.matchMedia('(prefers-reduced-motion: reduce)').matches)return;if(q!=='1'&&sessionStorage.getItem('swarm-rebuild:seen'))return;var s=d.createElement('style');s.id='swarm-rebuild-hide';s.textContent='@layer swarm-rebuild{body *{visibility:var(--sr-v,hidden)!important}#swarm-rebuild-root{opacity:var(--sr-o,1)!important}}';d.head.appendChild(s);try{w.__srDms=d.documentElement.animate([{'--sr-v':'visible','--sr-o':'0'}],{duration:1,delay:5000,fill:'forwards'})}catch(e){}setTimeout(function(){var r=w.SwarmRebuild;if(!(r&&r.active)){var e=d.getElementById('swarm-rebuild-hide');if(e)e.remove()}},5000)}catch(e){}})(document,window);</script>
+<link rel="stylesheet" href="../../../assets/swarm-rebuild.css">
+<style>
+  :root { --ink: #2b1d12; --muted: #6f5b4b; --crust: #b5652b; --cream: #fff8ef; --line: #ecdcc8; --card: #fff; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--cream); }
+  a { color: var(--crust); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  .btn { display: inline-block; padding: 12px 22px; border-radius: 999px; background: var(--crust); color: #fff; font: inherit; font-weight: 700; text-decoration: none; border: 0; cursor: pointer; }
+  .btn.ghost { background: transparent; color: var(--ink); border: 2px solid var(--ink); }
+  /* consent: bar at the top (page flow) */
+  .cookie-bar { background: #3a281a; color: #f6e9d9; font-size: 15px; }
+  .cookie-bar .wrap { display: flex; align-items: center; gap: 14px; padding-top: 12px; padding-bottom: 12px; flex-wrap: wrap; }
+  .cookie-bar p { margin: 0; flex: 1; min-width: 220px; }
+  .cookie-bar button, .consent-box button, .cookie-strip button, .cc-window button { padding: 8px 16px; border-radius: 999px; border: 1px solid currentColor; background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
+  .cookie-bar button.yes, .consent-box button.yes, .cookie-strip button.yes, .cc-window button.yes { background: var(--crust); border-color: var(--crust); color: #fff; }
+  /* consent: dialog with a backdrop */
+  .consent-wall { position: fixed; inset: 0; z-index: 90; background: rgba(30, 18, 8, .58); display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .consent-box { background: #fff; border-radius: 16px; max-width: 460px; padding: 26px; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+  .consent-box h2 { margin: 0 0 8px; font-size: 22px; }
+  .consent-box p { margin: 0 0 16px; color: var(--muted); }
+  .consent-box .acts { display: flex; gap: 10px; flex-wrap: wrap; }
+  /* consent: fixed bar at the bottom */
+  .cookie-strip { position: fixed; left: 0; right: 0; bottom: 0; z-index: 80; background: #fff; border-top: 1px solid var(--line); box-shadow: 0 -8px 24px rgba(0,0,0,.1); }
+  .cookie-strip .wrap { display: flex; gap: 14px; align-items: center; padding-top: 14px; padding-bottom: 14px; flex-wrap: wrap; }
+  .cookie-strip p { margin: 0; flex: 1; min-width: 220px; color: var(--muted); }
+  /* consent: added later by a script (consent manager) */
+  .cc-window { position: fixed; left: 18px; bottom: 18px; z-index: 2147483600; width: 340px; background: #241811; color: #f8ecdf; border-radius: 14px; padding: 18px; box-shadow: 0 14px 40px rgba(0,0,0,.4); font-size: 14px; }
+  .cc-window p { margin: 0 0 12px; }
+  header { position: sticky; top: 0; z-index: 30; background: rgba(255, 248, 239, .96); border-bottom: 1px solid var(--line); }
+  header .bar { display: flex; align-items: center; gap: 22px; height: 70px; }
+  .logo { font-weight: 800; font-size: 22px; color: var(--ink); text-decoration: none; margin-right: auto; letter-spacing: -.01em; }
+  .logo span { color: var(--crust); }
+  nav.main { display: flex; align-items: center; gap: 22px; font-size: 15px; }
+  nav.main a { color: var(--ink); text-decoration: none; }
+  .drop { position: relative; }
+  .drop > button { font: inherit; background: none; border: 0; color: var(--ink); cursor: pointer; padding: 0; }
+  .drop-panel { position: absolute; right: 0; top: 34px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 30px rgba(0,0,0,.12); padding: 8px; min-width: 190px; display: none; }
+  .drop.open .drop-panel { display: block; }
+  .drop-panel a { display: block; padding: 8px 12px; border-radius: 8px; }
+  .drop-panel a:hover { background: var(--cream); }
+  select.lang { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  #basket { font: inherit; font-size: 14px; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--ink); background: #fff; cursor: pointer; }
+  #burger { display: none; font: inherit; font-size: 15px; background: none; border: 1px solid var(--ink); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  .mnav { display: none; border-top: 1px solid var(--line); padding: 8px 0 14px; }
+  .mnav a { display: block; padding: 10px 0; color: var(--ink); text-decoration: none; font-weight: 600; }
+  header.menu-open .mnav { display: block; }
+  .hero { padding: 80px 0 70px; }
+  .hero .wrap { display: grid; grid-template-columns: 1.1fr .9fr; gap: 40px; align-items: center; }
+  .hero h1 { font-size: 52px; line-height: 1.08; margin: 0 0 16px; letter-spacing: -.02em; }
+  .hero p { font-size: 20px; color: var(--muted); margin: 0 0 26px; }
+  .hero .cta { display: flex; gap: 12px; flex-wrap: wrap; }
+  .hero svg { width: 100%; height: auto; display: block; }
+  section { padding: 70px 0; }
+  h2 { font-size: 34px; margin: 0 0 10px; letter-spacing: -.01em; }
+  .lead { color: var(--muted); margin: 0 0 30px; max-width: 640px; }
+  .bakes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .cookie-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+  .cookie-card svg { width: 100%; height: auto; display: block; margin-bottom: 10px; }
+  .cookie-card h3 { margin: 0 0 4px; font-size: 19px; }
+  .cookie-card p { margin: 0 0 12px; color: var(--muted); font-size: 15px; }
+  .cookie-card .row { display: flex; align-items: center; justify-content: space-between; }
+  .cookie-card .add { font: inherit; font-size: 14px; font-weight: 700; padding: 6px 16px; border-radius: 999px; border: 0; background: var(--ink); color: #fff; cursor: pointer; }
+  .story { background: #f6e7d3; }
+  .story .wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; align-items: center; }
+  .story svg { width: 100%; height: auto; display: block; border-radius: 16px; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; }
+  td { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  td:last-child { text-align: right; font-weight: 600; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; }
+  form label { display: block; font-size: 14px; color: var(--muted); margin: 14px 0 6px; }
+  form input, form select, form textarea { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; background: #fff; }
+  form .btn { margin-top: 18px; }
+  .thanks { margin-top: 16px; padding: 14px 16px; background: #e5f3e1; border-radius: 10px; }
+  details { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin-bottom: 10px; }
+  summary { cursor: pointer; font-weight: 700; }
+  details p { margin: 10px 0 0; color: var(--muted); }
+  footer { background: var(--ink); color: #e8d9c8; padding: 40px 0 120px; font-size: 14px; }
+  footer a { color: #fff; }
+  /* newsletter pop-up */
+  .nl-wall { position: fixed; inset: 0; z-index: 95; background: rgba(30, 18, 8, .6); display: none; align-items: center; justify-content: center; padding: 20px; }
+  .nl-wall.open { display: flex; }
+  .nl-box { position: relative; background: #fff; border-radius: 18px; max-width: 420px; width: 100%; padding: 28px; }
+  .nl-box h2 { font-size: 24px; margin: 0 0 6px; }
+  .nl-box p { color: var(--muted); margin: 0 0 14px; }
+  .nl-box input { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; margin-bottom: 12px; }
+  .nl-close { position: absolute; right: 12px; top: 10px; border: 0; background: none; font-size: 22px; cursor: pointer; color: var(--muted); }
+  /* chat widget (added later) */
+  .chat-fab { position: fixed; right: 20px; bottom: 20px; z-index: 70; width: 58px; height: 58px; border-radius: 50%; border: 0; background: var(--crust); color: #fff; font: 700 15px system-ui, sans-serif; cursor: pointer; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+  .chat-panel { position: fixed; right: 20px; bottom: 90px; z-index: 70; width: 300px; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 14px 40px rgba(0,0,0,.2); padding: 14px; display: none; font-size: 14px; }
+  .chat-panel.open { display: block; }
+  .chat-panel input { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+  @media (max-width: 759px) {
+    nav.main { display: none; }
+    #burger { display: inline-block; }
+    .hero { padding: 40px 0; }
+    .hero .wrap, .story .wrap, .split { grid-template-columns: 1fr; }
+    .hero h1 { font-size: 36px; }
+    .bakes { grid-template-columns: 1fr; }
+    select.lang { display: none; }
+    .cc-window { left: 12px; right: 12px; width: auto; }
+    .chat-fab { bottom: 84px; }
+  }
+</style>
+</head>
+<body>
+<script>
+  // which consent banner this visit shows (a test switch); a stored choice hides it, like on a real site
+  (function () {
+    var q = new URLSearchParams(location.search), v = q.get('banner') || 'top';
+    window.__crumbBanner = v;
+    var known = false; try { known = !!localStorage.getItem('crumb-consent-' + v); } catch (e) {}
+    window.__crumbShow = known || v === 'none' ? '' : v;
+  })();
+</script>
+<div class="cookie-bar" id="cookie-bar" aria-label="Cookie notice" data-variant="top">
+  <div class="wrap"><p>We use cookies to remember your basket and to count visits. Is that all right?</p><button type="button" class="no">Only necessary</button><button type="button" class="yes" id="top-accept">Accept</button></div>
+</div>
+<div class="consent-wall" id="consent-wall" data-variant="modal">
+  <div class="consent-box" role="dialog" aria-modal="true" aria-labelledby="cw-title">
+    <h2 id="cw-title">Cookies, but the digital kind</h2>
+    <p>We use cookies to remember your basket and, if you agree, to count visits anonymously.</p>
+    <div class="acts"><button type="button" class="yes" id="modal-accept">Accept all</button><button type="button" class="no">Only necessary</button></div>
+  </div>
+</div>
+<div class="cookie-strip" id="cookie-strip" role="region" aria-label="Cookie notice" data-variant="bottom">
+  <div class="wrap"><p>This site uses cookies for the basket and anonymous statistics.</p><button type="button" class="no">Reject</button><button type="button" class="yes" id="bottom-accept">Accept</button></div>
+</div>
+<script>
+  // keep only the banner of this visit (before the first paint: nothing moves)
+  document.querySelectorAll('[data-variant]').forEach(function (el) { if (el.getAttribute('data-variant') !== window.__crumbShow) el.remove(); });
+</script>
+<header id="top">
+  <div class="wrap bar">
+    <a class="logo" href="#top">Morning <span>Crumb</span></a>
+    <nav class="main" aria-label="Main">
+      <a href="#bakes">Today&rsquo;s bakes</a>
+      <a href="#order">Order</a>
+      <div class="drop" id="visit-drop"><button type="button" id="visit-btn" aria-expanded="false" aria-controls="visit-panel">Visit &#9662;</button>
+        <div class="drop-panel" id="visit-panel"><a href="#hours">Opening hours</a><a href="#find">Find us</a><a href="#faq">Questions</a></div></div>
+      <select class="lang" id="lang" aria-label="Language"><option value="en">EN</option><option value="hu">HU</option><option value="de">DE</option></select>
+    </nav>
+    <button type="button" id="basket">Basket (0)</button>
+    <button type="button" id="burger" aria-expanded="false" aria-controls="mnav">Menu</button>
+  </div>
+  <div class="wrap mnav" id="mnav"><a href="#bakes">Today&rsquo;s bakes</a><a href="#order">Order for pickup</a><a href="#hours">Opening hours</a><a href="#find">Find us</a><a href="#faq">Questions</a></div>
+</header>
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <div>
+        <h1 id="hero-title">Bread before sunrise, coffee all day</h1>
+        <p id="hero-sub">A neighbourhood bakery since 2009. Order online, pick up warm at the counter.</p>
+        <div class="cta"><a class="btn" id="order-btn" href="#order">Order for pickup</a><button type="button" class="btn ghost" id="nl-open">Get the newsletter</button></div>
+      </div>
+      <svg viewBox="0 0 480 340" aria-hidden="true"><rect width="480" height="340" rx="22" fill="#f1d9b9"/><ellipse cx="240" cy="230" rx="170" ry="60" fill="#c27a3e"/><ellipse cx="240" cy="210" rx="150" ry="62" fill="#d99254"/><path d="M130 205c40-25 80-25 110 0M200 195c40-25 80-25 110 0M260 205c40-25 80-25 70 0" stroke="#a65d26" stroke-width="8" fill="none" stroke-linecap="round"/><circle cx="390" cy="80" r="34" fill="#fff6e2"/></svg>
+    </div>
+  </section>
+  <section id="bakes">
+    <div class="wrap">
+      <h2>Today&rsquo;s bakes</h2>
+      <p class="lead">Out of the oven at 6:30. Add to your basket and pick up later.</p>
+      <div class="bakes"><article class="cookie-card"><svg viewBox="0 0 120 80" aria-hidden="true"><rect width="120" height="80" rx="8" fill="#f3e3cc"/><circle cx="60" cy="40" r="22" fill="#c98b4b"/><circle cx="52" cy="34" r="3" fill="#5b3418"/><circle cx="68" cy="44" r="3" fill="#5b3418"/><circle cx="58" cy="50" r="2.5" fill="#5b3418"/></svg><h3>Brown butter cookie</h3><p>Crisp edges, soft middle, flaky salt.</p><div class="row"><b>€2.40</b><button type="button" class="add">Add</button></div></article><article class="cookie-card"><svg viewBox="0 0 120 80" aria-hidden="true"><rect width="120" height="80" rx="8" fill="#f3e3cc"/><circle cx="60" cy="40" r="24" fill="#c98b4b"/><circle cx="52" cy="34" r="3" fill="#5b3418"/><circle cx="68" cy="44" r="3" fill="#5b3418"/><circle cx="58" cy="50" r="2.5" fill="#5b3418"/></svg><h3>Oat &amp; raisin cookie</h3><p>Rolled oats, plump raisins, cinnamon.</p><div class="row"><b>€2.20</b><button type="button" class="add">Add</button></div></article><article class="cookie-card"><svg viewBox="0 0 120 80" aria-hidden="true"><rect width="120" height="80" rx="8" fill="#f3e3cc"/><circle cx="60" cy="40" r="26" fill="#c98b4b"/><circle cx="52" cy="34" r="3" fill="#5b3418"/><circle cx="68" cy="44" r="3" fill="#5b3418"/><circle cx="58" cy="50" r="2.5" fill="#5b3418"/></svg><h3>Double chocolate cookie</h3><p>Dark cocoa dough, chunks of 70 % chocolate.</p><div class="row"><b>€2.60</b><button type="button" class="add">Add</button></div></article><article class="cookie-card"><svg viewBox="0 0 120 80" aria-hidden="true"><rect width="120" height="80" rx="8" fill="#f3e3cc"/><circle cx="60" cy="40" r="28" fill="#c98b4b"/><circle cx="52" cy="34" r="3" fill="#5b3418"/><circle cx="68" cy="44" r="3" fill="#5b3418"/><circle cx="58" cy="50" r="2.5" fill="#5b3418"/></svg><h3>Ginger snap</h3><p>Snappy, warming, with candied ginger.</p><div class="row"><b>€1.90</b><button type="button" class="add">Add</button></div></article><article class="cookie-card"><svg viewBox="0 0 120 80" aria-hidden="true"><rect width="120" height="80" rx="8" fill="#f3e3cc"/><circle cx="60" cy="40" r="30" fill="#c98b4b"/><circle cx="52" cy="34" r="3" fill="#5b3418"/><circle cx="68" cy="44" r="3" fill="#5b3418"/><circle cx="58" cy="50" r="2.5" fill="#5b3418"/></svg><h3>Almond croissant</h3><p>Twice baked, almond cream, toasted flakes.</p><div class="row"><b>€3.80</b><button type="button" class="add">Add</button></div></article><article class="cookie-card"><svg viewBox="0 0 120 80" aria-hidden="true"><rect width="120" height="80" rx="8" fill="#f3e3cc"/><circle cx="60" cy="40" r="32" fill="#c98b4b"/><circle cx="52" cy="34" r="3" fill="#5b3418"/><circle cx="68" cy="44" r="3" fill="#5b3418"/><circle cx="58" cy="50" r="2.5" fill="#5b3418"/></svg><h3>Sourdough loaf</h3><p>48-hour ferment, dark crust, open crumb.</p><div class="row"><b>€6.50</b><button type="button" class="add">Add</button></div></article></div>
+    </div>
+  </section>
+  <section class="story">
+    <div class="wrap">
+      <svg viewBox="0 0 480 320" aria-hidden="true"><rect width="480" height="320" fill="#8a5a36"/><rect x="40" y="60" width="400" height="200" rx="12" fill="#5e3a20"/><rect x="70" y="90" width="340" height="70" rx="8" fill="#e69a4f"/><rect x="70" y="175" width="340" height="60" rx="8" fill="#3d2513"/></svg>
+      <div><h2>Slow dough, early mornings</h2><p>Every loaf rests for two days before it meets the oven. We mill part of our flour in the back room and buy the rest from two farms nearby.</p><p>The coffee comes from a roaster three streets away. If you bring your own cup, the first refill is on us.</p></div>
+    </div>
+  </section>
+  <section id="hours">
+    <div class="wrap split">
+      <div><h2>Opening hours</h2><p class="lead">Closed on public holidays. Bread runs out around 14:00 on Saturdays.</p></div>
+      <table><tbody><tr><td>Monday – Friday</td><td>6:30 – 18:00</td></tr><tr><td>Saturday</td><td>7:00 – 15:00</td></tr><tr><td>Sunday</td><td>8:00 – 13:00</td></tr></tbody></table>
+    </div>
+  </section>
+  <section id="order">
+    <div class="wrap split">
+      <div><h2>Order for pickup</h2><p class="lead">Order by 20:00 and your bread is waiting at 7:00 the next morning.</p></div>
+      <form id="order-form" novalidate>
+        <label for="o-name">Name</label><input id="o-name" name="name" autocomplete="name">
+        <label for="o-phone">Phone</label><input id="o-phone" name="phone" type="tel" autocomplete="tel">
+        <label for="o-time">Pickup</label><select id="o-time" name="time"><option>7:00 – 9:00</option><option>9:00 – 12:00</option><option>12:00 – 15:00</option></select>
+        <label for="o-note">Note</label><textarea id="o-note" name="note" rows="3"></textarea>
+        <button class="btn" type="submit" id="o-send">Send order</button>
+        <div id="o-result" aria-live="polite"></div>
+      </form>
+    </div>
+  </section>
+  <section id="find">
+    <div class="wrap"><h2>Find us</h2><p class="lead">14 Mill Lane, Riverside (fictional). Bus 7 to Mill Lane, bicycle racks at the door.</p></div>
+  </section>
+  <section id="faq">
+    <div class="wrap"><h2>Questions</h2><details><summary>Do you bake gluten-free?</summary><p>Yes: a gluten-free loaf on Fridays and almond cookies every day. They are baked in the same kitchen, so we cannot promise zero traces.</p></details><details><summary>Can I order a cake?</summary><p>Birthday and wedding cakes need three days. Use the order form or call us; we will confirm by phone.</p></details><details><summary>Is there seating?</summary><p>Twenty seats inside and six on the terrace in summer. Laptops are welcome before 11:00 and after 15:00.</p></details><details><summary>Do you deliver?</summary><p>Not yet. Orders are picked up at the counter; we keep them warm for 30 minutes.</p></details></div>
+  </section>
+</main>
+<footer><div class="wrap">Morning Crumb Bakery &amp; Café — fictional test page. <a href="tel:+15550144500">+1 555 0144 500</a></div></footer>
+<div class="nl-wall" id="nl-wall">
+  <div class="nl-box" role="dialog" aria-modal="true" aria-labelledby="nl-title">
+    <button type="button" class="nl-close" id="nl-close" aria-label="Close">&times;</button>
+    <h2 id="nl-title">Fresh news, once a month</h2>
+    <p>New bakes, holiday hours, no spam.</p>
+    <input id="nl-email" type="email" placeholder="you@example.invalid" aria-label="E-mail">
+    <button type="button" class="btn" id="nl-send">Subscribe</button>
+  </div>
+</div>
+<script>
+  (function () {
+    function remember(k, v) { try { localStorage.setItem(k, v); } catch (e) {} document.cookie = k + '=' + v + '; path=/; max-age=31536000; SameSite=Lax'; }
+    // consent banners: any button closes the banner and stores the choice
+    function wire(el, v) {
+      if (!el) return;
+      el.querySelectorAll('button').forEach(function (b) { b.addEventListener('click', function () { remember('crumb-consent-' + v, b.classList.contains('yes') ? 'all' : 'necessary'); el.remove(); }); });
+    }
+    wire(document.getElementById('cookie-bar'), 'top');
+    wire(document.getElementById('consent-wall'), 'modal');
+    wire(document.getElementById('cookie-strip'), 'bottom');
+    if (window.__crumbShow === 'late') setTimeout(function () {
+      var w = document.createElement('div');
+      w.className = 'cc-window'; w.id = 'cc-window'; w.setAttribute('role', 'dialog'); w.setAttribute('aria-label', 'Cookie consent');
+      w.innerHTML = '<p>We and our partners use cookies for the basket and statistics.</p><button type="button" class="yes" id="late-accept">Accept</button> <button type="button" class="no">Decline</button>';
+      document.body.appendChild(w); wire(w, 'late');
+    }, 1200);
+    // header: drop-down, hamburger, language, basket
+    var drop = document.getElementById('visit-drop'), vb = document.getElementById('visit-btn');
+    vb.addEventListener('click', function (e) { e.stopPropagation(); var o = !drop.classList.contains('open'); drop.classList.toggle('open', o); vb.setAttribute('aria-expanded', String(o)); });
+    document.addEventListener('click', function (e) { if (!drop.contains(e.target)) { drop.classList.remove('open'); vb.setAttribute('aria-expanded', 'false'); } });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && drop.classList.contains('open')) { drop.classList.remove('open'); vb.setAttribute('aria-expanded', 'false'); vb.focus(); } });
+    var hdr = document.querySelector('header'), bg = document.getElementById('burger');
+    bg.addEventListener('click', function () { var o = !hdr.classList.contains('menu-open'); hdr.classList.toggle('menu-open', o); bg.setAttribute('aria-expanded', String(o)); bg.textContent = o ? 'Close' : 'Menu'; });
+    document.querySelectorAll('.mnav a').forEach(function (a) { a.addEventListener('click', function () { hdr.classList.remove('menu-open'); bg.setAttribute('aria-expanded', 'false'); bg.textContent = 'Menu'; }); });
+    var T = { en: ['Bread before sunrise, coffee all day', 'A neighbourhood bakery since 2009. Order online, pick up warm at the counter.'],
+              hu: ['Kenyér napfelkelte előtt, kávé egész nap', 'Környékbeli pékség 2009 óta. Rendelj online, és vedd át melegen a pultnál.'],
+              de: ['Brot vor Sonnenaufgang, Kaffee den ganzen Tag', 'Eine Bäckerei im Viertel seit 2009. Online bestellen, warm an der Theke abholen.'] };
+    document.getElementById('lang').addEventListener('change', function () { var t = T[this.value]; document.getElementById('hero-title').textContent = t[0]; document.getElementById('hero-sub').textContent = t[1]; document.documentElement.lang = this.value; remember('crumb-lang', this.value); });
+    var n = 0, basket = document.getElementById('basket');
+    document.querySelectorAll('.add').forEach(function (b) { b.addEventListener('click', function () { basket.textContent = 'Basket (' + (++n) + ')'; remember('crumb-basket', String(n)); }); });
+    // order form: answered on the page
+    document.getElementById('order-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var name = document.getElementById('o-name').value.trim() || 'friend';
+      var d = document.createElement('div'); d.className = 'thanks'; d.textContent = 'Thanks, ' + name + '! We will call you to confirm.';
+      var r = document.getElementById('o-result'); r.innerHTML = ''; r.appendChild(d);
+    });
+    // newsletter pop-up (button; ?popup=auto after 5 s): ✕, a click on the backdrop or Esc closes it
+    var wall = document.getElementById('nl-wall');
+    function openNl() { wall.classList.add('open'); setTimeout(function () { document.getElementById('nl-email').focus(); }, 30); }
+    function closeNl() { wall.classList.remove('open'); }
+    document.getElementById('nl-open').addEventListener('click', openNl);
+    document.getElementById('nl-close').addEventListener('click', closeNl);
+    document.getElementById('nl-send').addEventListener('click', function () { remember('crumb-newsletter', 'yes'); closeNl(); });
+    wall.addEventListener('click', function (e) { if (e.target === wall) closeNl(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && wall.classList.contains('open')) closeNl(); });
+    if (new URLSearchParams(location.search).get('popup') === 'auto') setTimeout(openNl, 5000);
+    // chat widget, added by a script after 2 s (like a support tool)
+    setTimeout(function () {
+      var f = document.createElement('button'); f.type = 'button'; f.className = 'chat-fab'; f.id = 'chat-fab'; f.textContent = 'Chat'; f.setAttribute('aria-expanded', 'false');
+      var p = document.createElement('div'); p.className = 'chat-panel'; p.id = 'chat-panel'; p.innerHTML = '<p><b>Hi!</b> Questions about an order?</p><input id="chat-input" placeholder="Type a message" aria-label="Message">';
+      f.addEventListener('click', function () { var o = !p.classList.contains('open'); p.classList.toggle('open', o); f.setAttribute('aria-expanded', String(o)); });
+      document.body.appendChild(p); document.body.appendChild(f);
+    }, 2000);
+  })();
+</script>
+<script src="../../../assets/swarm-rebuild.js" data-auto data-focus="#order-btn"></script>
+</body>
+</html>

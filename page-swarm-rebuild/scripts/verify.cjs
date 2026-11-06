@@ -87,7 +87,7 @@ const MOBILE = args.device === 'mobile';
 const [VW, VH] = String(args.viewport || (MOBILE ? '390x844' : '1440x900')).split('x').map(Number);
 const FPS = Number(args.fps || 10);
 const CHECKS = new Set(String(args.checks || 'all').split(','));
-if (CHECKS.has('all')) ['record', 'extra', 'product', 'protect', 'fixed', 'visible', 'text', 'a11y', 'motion'].forEach((c) => CHECKS.add(c));
+if (CHECKS.has('all')) ['record', 'extra', 'product', 'interact', 'protect', 'fixed', 'visible', 'text', 'a11y', 'motion'].forEach((c) => CHECKS.add(c));
 const TIMEOUT_S = Number(args.timeout || 400);
 const MIN_FPS = Number(args['min-fps'] || 50);
 fs.mkdirSync(path.join(OUT, 'frames'), { recursive: true });
@@ -165,6 +165,27 @@ const STATE = () => window.SwarmRebuild ? window.SwarmRebuild.state() : { phase:
 const gone = () => ({ root: !!document.getElementById('swarm-rebuild-root'), hide: !!document.getElementById('swarm-rebuild-hide'), reveal: !!document.getElementById('swarm-rebuild-reveal'), dom: document.body.outerHTML, s: window.SwarmRebuild ? window.SwarmRebuild.state() : null, cls: window.__cls });
 const isFinished = (g, baseDom) => !g.root && !g.hide && !g.reveal && domSame(g.dom, baseDom);
 // per-element visibility, in document order (the page loaded with the effect off is the reference)
+// in the page: a spot in view that is no control of the page (no link, button, field, dialog, fixed bar): a double click there ends the effect
+const EMPTY_SPOT = () => {
+  const ACT = 'a[href],area[href],button,input,select,textarea,label,summary,details,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[role="checkbox"],[role="switch"],[onclick],[tabindex],[contenteditable],dialog,[role="dialog"],[role="alertdialog"],[aria-modal="true"],[role="menu"],[role="listbox"],[aria-expanded="true"]';
+  const vw = document.documentElement.clientWidth, vh = innerHeight;
+  const root = document.getElementById('swarm-rebuild-root');
+  if (root) root.style.display = 'none';
+  try {
+    for (let y = Math.round(vh * 0.3); y < vh * 0.9; y += 37) for (let x = 24; x < vw - 24; x += 41) {
+      const el = document.elementFromPoint(x, y);
+      if (!el || el.closest(ACT)) continue;
+      let fixed = false;
+      for (let p = el; p && p !== document.body; p = p.parentElement) if (getComputedStyle(p).position === 'fixed') { fixed = true; break; }
+      if (fixed) continue;
+      // no text right there (a double click on text selects a word: normal use)
+      const r = document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null;
+      if (r && r.startContainer.nodeType === 3 && /\S/.test(r.startContainer.data)) { const rr = r.getBoundingClientRect(); if (Math.abs(rr.top - y) < 30 && Math.abs(rr.left - x) < 30) continue; }
+      return { x, y, what: el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : '') };
+    }
+  } finally { if (root) root.style.display = ''; }
+  return null;
+};
 const VIS_MAP = () => Array.from(document.body.querySelectorAll('*')).map((e) => getComputedStyle(e).visibility.charAt(0)).join('');
 
 // in the page: which visible obstacles does the control bar overlap right now?
@@ -240,6 +261,8 @@ function fixedTargets() {
   async function openEffect(mode, o = {}) {
     const ctx = await newCtx(o.ctx || {});
     await ctx.addInitScript(CLS_INIT);
+    // --module <file>: the page gets this module file instead of its own (to measure an older version the same way)
+    if (args.module && args.module !== true) { const body = fs.readFileSync(path.resolve(String(args.module))); await ctx.route(/swarm-rebuild(\.min)?\.js(\?|$)/, (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body })); }
     const page = await ctx.newPage();
     const bag = [];
     bag.fallbacks = [];
@@ -499,7 +522,6 @@ function fixedTargets() {
       check('product: default mode is scroll', x.def === 'scroll', x.def);
       await ctx.close();
     }
-    // ---------- ways out: Esc, any key, click / tap; a lone modifier key does nothing
     // ---------- scroll keys (Space, arrows, Page Down / Up, End / Home) only scroll: the build follows, like with the wheel
     {
       const { ctx, page } = await openEffect('scroll', { after: 1.2 });
@@ -524,19 +546,30 @@ function fixedTargets() {
         trail.join(', ') + '; layers ' + s0.layersDone + ' -> ' + (s1.phase === 'idle' ? 'all (finished, exit ' + s1.lastExit + ')' : s1.layersDone + ', ' + s1.phase));
       await ctx.close();
     }
-    const exits = [['Escape', 'Esc'], ['a', 'a letter key'], ['Tab', 'Tab'], ['Enter', 'Enter'], ['Control+ArrowDown', 'Ctrl + arrow']];
-    for (const [key, label] of exits) {
+    // ---------- only Esc (and a double click / tap on an empty spot, see interact) ends the effect; the page's own keys do not
+    {
       const { ctx, page } = await openEffect('scroll', { after: 1.2 });
       const s0 = await page.evaluate(STATE);
-      if (key === 'a') { await page.keyboard.press('Shift'); await page.waitForTimeout(120); const s1 = await page.evaluate(STATE); check('product: a lone Shift does not end the effect', s1.phase === 'build', s1.phase); }
-      await page.keyboard.press(key);
+      await page.keyboard.press('Escape');
       await page.waitForTimeout(120);
       const g = await page.evaluate(gone);
-      check('product: ' + label + ' shows the finished page at once, without layout shift', s0.phase === 'build' && isFinished(g, baseDom) && g.cls < 0.01, 'exit ' + (g.s && g.s.lastExit) + ', CLS ' + (g.cls || 0).toFixed(4));
+      check('product: Esc shows the finished page at once, without layout shift', s0.phase === 'build' && isFinished(g, baseDom) && g.cls < 0.01, 'exit ' + (g.s && g.s.lastExit) + ', CLS ' + (g.cls || 0).toFixed(4));
       await ctx.close();
     }
     {
-      // click (or tap) on content that is still hidden: no navigation, no action, finished page
+      const { ctx, page } = await openEffect('scroll', { after: 1.2 });
+      const s0 = await page.evaluate(STATE);
+      const keys = ['Shift', 'a', 'Tab', 'Enter', 'Control+ArrowDown', 'Shift+Tab', 'Tab'];
+      for (const k of keys) { await page.keyboard.press(k); await page.waitForTimeout(150); }
+      await page.waitForTimeout(1200);
+      const s1 = await page.evaluate(STATE);
+      check('product: the page\'s own keys (letters, Tab, Enter, Ctrl + arrow, a lone Shift) do not end the effect, the build goes on',
+        s0.phase === 'build' && (s1.phase === 'build' ? s1.layersDone > s0.layersDone : s1.phase === 'done' || s1.lastExit === 'auto'),
+        keys.join(', ') + '; ' + s0.phase + ' ' + s0.layersDone + ' -> ' + s1.phase + ' ' + (s1.layersDone != null ? s1.layersDone : '') + (s1.lastExit ? ' (exit ' + s1.lastExit + ')' : ''));
+      await ctx.close();
+    }
+    {
+      // click (or tap) on content that is still hidden: no navigation, no action, and the effect goes on
       const { ctx, page } = await openEffect('scroll', { after: 0.6 });
       const urlBefore = page.url();
       const pt = await page.evaluate(() => {
@@ -552,17 +585,18 @@ function fixedTargets() {
       });
       let popup = false;
       page.on('popup', () => { popup = true; });
+      const s0 = await page.evaluate(STATE);
       if (pt) { if (MOBILE) await page.touchscreen.tap(pt.x, pt.y); else await page.mouse.click(pt.x, pt.y); }
       else { if (MOBILE) await page.touchscreen.tap(VW / 2, VH / 2); else await page.mouse.click(VW / 2, VH / 2); }
-      await page.waitForTimeout(700);
-      const g = await page.evaluate(gone).catch(() => null);
+      await page.waitForTimeout(900);
+      const s1 = await page.evaluate(STATE).catch(() => ({ phase: 'err' }));
       const sameUrl = page.url() === urlBefore;
-      check('product: ' + (MOBILE ? 'a tap' : 'a click') + ' on unfinished content shows the page and does not navigate', g && isFinished(g, baseDom) && sameUrl && !popup && g.cls < 0.01,
-        (pt ? 'hit the spot of hidden ' + pt.what : 'no hidden link in view, clicked the middle') + ', url ' + (sameUrl ? 'unchanged' : 'changed to ' + page.url()) + ', exit ' + (g && g.s && g.s.lastExit));
+      check('product: ' + (MOBILE ? 'a tap' : 'a click') + ' on unfinished content does nothing (no navigation) and the effect goes on', sameUrl && !popup && (s1.phase === 'build' || s1.phase === 'done') && (s1.layersDone || 0) >= (s0.layersDone || 0),
+        (pt ? 'hit the spot of hidden ' + pt.what : 'no hidden link in view, clicked the middle') + ', url ' + (sameUrl ? 'unchanged' : 'changed to ' + page.url()) + ', effect ' + s1.phase + (s1.lastExit ? ' (' + s1.lastExit + ')' : ''));
       await ctx.close();
     }
     if (args.consent) {
-      // a cookie / consent banner: its button works at the first click during the build, and the effect ends
+      // a cookie / consent banner: its button works at the first click during the build, and the build goes on
       const sel = String(args.consent);
       const { ctx, page } = await openEffect('scroll', { after: 0.3 });
       const seen = await page.waitForFunction((s) => { const e = document.querySelector(s); if (!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && getComputedStyle(e).visibility === 'visible'; }, sel, { timeout: 8000 }).then(() => true).catch(() => false);
@@ -572,13 +606,13 @@ function fixedTargets() {
       if (box) { if (MOBILE) await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2); else await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); }
       await page.waitForTimeout(400);
       const r = await page.evaluate((s) => { const e = document.querySelector(s); const vis = !!e && e.getBoundingClientRect().width > 0 && getComputedStyle(e).display !== 'none' && !!e.offsetParent; return { vis, st: window.SwarmRebuild.state(), cls: window.__cls }; }, sel);
-      check('product: the consent banner works at the first ' + (MOBILE ? 'tap' : 'click') + ' during the build (' + sel + ') and the effect ends',
-        seen && s0.phase === 'build' && !r.vis && r.st.phase === 'idle' && page.url() === urlBefore && (r.cls || 0) < 0.01,
-        (seen ? 'button visible during the build' : 'button never visible') + ', was ' + s0.phase + ', banner ' + (r.vis ? 'still there' : 'gone') + ', effect ' + r.st.phase + ' (' + (r.st.lastExit || '') + ')');
+      check('product: the consent banner works at the first ' + (MOBILE ? 'tap' : 'click') + ' during the build (' + sel + ') and the effect goes on',
+        seen && s0.phase === 'build' && !r.vis && (r.st.phase === 'build' || r.st.phase === 'done') && page.url() === urlBefore && (r.cls || 0) < 0.01,
+        (seen ? 'button visible during the build' : 'button never visible') + ', was ' + s0.phase + ', banner ' + (r.vis ? 'still there' : 'gone') + ', effect ' + r.st.phase + (r.st.lastExit ? ' (' + r.st.lastExit + ')' : ''));
       await ctx.close();
     }
     if (args.interact) {
-      // click on content that is already finished: the click goes through (and the effect ends)
+      // click on content that is already finished: the click goes through, the effect goes on
       const sel = String(args.interact);
       const { ctx, page } = await openEffect('scroll', { after: 0.2 });
       const ok = await page.waitForFunction((s) => { const e = document.querySelector(s); return e && getComputedStyle(e).visibility === 'visible'; }, sel, { timeout: 20000 }).then(() => true).catch(() => false);
@@ -589,8 +623,295 @@ function fixedTargets() {
       if (MOBILE) await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2); else await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
       await page.waitForTimeout(300);
       const now = await page.textContent(sel).catch(() => null);
+      const s1 = await page.evaluate(STATE);
+      check('product: a click on finished content works and the effect goes on (' + sel + ')', ok && s0.phase === 'build' && before !== now && (s1.phase === 'build' || s1.phase === 'done'), JSON.stringify(before) + ' -> ' + JSON.stringify(now) + ', effect ' + s0.phase + ' -> ' + s1.phase);
+      await ctx.close();
+    }
+  }
+
+  if (CHECKS.has('interact')) {
+    // ---------- the visitor uses the page while it builds: the effect goes on; only Esc / a double click or tap on an
+    // empty spot end it. Click on desktop, tap on mobile, and the keyboard.
+    report.interact = {};
+    // one part that cannot run (an element missing, a timeout) fails as a check instead of stopping the whole run
+    const guard = async (name, fn) => { try { await fn(); } catch (e) { check('interact: ' + name + ' could not run', false, String(e && e.message || e).split('\n')[0].slice(0, 200)); } };
+    const tapAt = async (page, x, y) => { if (MOBILE) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); };
+    const visibleSel = (s) => { const e = document.querySelector(s); if (!e) return false; const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility === 'visible' && cs.display !== 'none' && r.bottom > 0 && r.top < innerHeight; };
+    const store = () => { let l = ''; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); l += k + '=' + localStorage.getItem(k) + ';'; } } catch (e) { /* ignore */ } return l + '|' + document.cookie; };
+    const running = (s) => s.phase === 'build' || s.phase === 'done' || (s.phase === 'idle' && s.lastExit === 'auto');
+    // after an action: the effect is still on and makes progress (or finished by itself)
+    async function goesOn(page, s0, ms = 1600) {
+      let s = s0, worked = false;
+      const tEnd = Date.now() + ms;
+      while (Date.now() < tEnd) {
+        await page.waitForTimeout(200);
+        s = await page.evaluate(STATE).catch(() => ({ phase: 'err' }));
+        if (!running(s)) return { ok: false, s, why: 'effect ' + s.phase + (s.lastExit ? ' (exit ' + s.lastExit + ')' : '') };
+        if (s.phase !== 'build' || s.layersDone > s0.layersDone || s.activeTasks > 0) worked = true;
+        if (s.phase === 'build' && s.layersDone > s0.layersDone) break;
+      }
+      // (everything in view may be finished already: read on a little)
+      for (let k = 0; k < 6 && !worked && running(s); k++) { await page.mouse.wheel(0, Math.round(VH * 0.6)); await page.waitForTimeout(700); s = await page.evaluate(STATE); worked = running(s) && (s.phase !== 'build' || s.layersDone > s0.layersDone); }
+      return { ok: worked && running(s), s, why: s.phase + ' ' + (s.layersDone != null ? s.layersDone + '/' + s.layersTotal : '') + (s.activeTasks ? ', ' + s.activeTasks + ' tasks' : '') };
+    }
+    // read on to the end; the finished page must be complete (nothing left hidden) and nothing may have jumped
+    async function toEnd(page, bag, refDom) {
+      const r = await readDown(page, 0.5, 400, 70000);
+      await untilIdle(page, 12000);
       const g = await page.evaluate(gone);
-      check('product: a click on finished content works and ends the effect (' + sel + ')', ok && s0.phase === 'build' && before !== now && !g.root && !g.hide, JSON.stringify(before) + ' -> ' + JSON.stringify(now) + ', was ' + s0.phase);
+      const hiddenLeft = await page.evaluate(() => Array.from(document.body.querySelectorAll('*')).filter((e) => { const c = getComputedStyle(e); return c.visibility === 'hidden' && c.display !== 'none' && e.getBoundingClientRect().width > 0; }).length);
+      return { g, hiddenLeft, steps: r.steps, ok: !g.root && !g.hide && !g.reveal && (refDom == null || domSame(g.dom, refDom)) && (g.cls || 0) < 0.01 && !bag.length, natural: g.s && g.s.lastExit === 'auto' };
+    }
+    // the reference page after the same action without the effect (to compare the final DOM)
+    async function refAfter(fn) {
+      const c = await newCtx(); const p = await c.newPage();
+      await p.goto(withParams(args.url, { rebuild: '0' }), { waitUntil: 'load' });
+      await p.waitForTimeout(300);
+      try { await fn(p); } catch (e) { /* ignore */ }
+      await p.waitForTimeout(500);
+      await p.evaluate(async () => { const st = Math.max(200, innerHeight * 0.8); for (let y = 0; y < document.documentElement.scrollHeight; y += st) { scrollTo(0, y); await new Promise((r) => setTimeout(r, 60)); } });
+      await p.waitForTimeout(3000); // (what the page adds later by itself, e.g. a chat widget, is there too)
+      const d = await p.evaluate(() => document.body.outerHTML);
+      await c.close();
+      return d;
+    }
+    const lateWait = args.late ? 9000 : 6000;
+    if (args.consent) await guard('consent', async () => {
+      const sel = String(args.consent);
+      const ref = await refAfter(async (p) => { await p.waitForFunction(visibleSel, sel, { timeout: lateWait }); await p.click(sel); });
+      report.interact.consent = {};
+      for (const when of ['0.5', '2', 'mid']) {
+        const { ctx, page, bag } = await openEffect('scroll', { after: when === 'mid' ? 0.2 : +when });
+        if (when === 'mid') { // half of the build, read like a visitor
+          const tEnd = Date.now() + 40000;
+          for (;;) { const s = await page.evaluate(STATE); if (s.phase !== 'build' || s.layersDone >= s.layersTotal * 0.45 || Date.now() > tEnd) break; await page.mouse.wheel(0, Math.round(VH * 0.3)); await page.waitForTimeout(350); }
+          await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' })); await page.waitForTimeout(400);
+        }
+        const seen = await page.waitForFunction(visibleSel, sel, { timeout: lateWait }).then(() => true).catch(() => false);
+        const s0 = await page.evaluate(STATE), st0 = await page.evaluate(store);
+        const box = seen ? await (await page.$(sel)).boundingBox() : null;
+        if (box) await tapAt(page, box.x + box.width / 2, box.y + box.height / 2);
+        await page.waitForTimeout(450);
+        const after = await page.evaluate(([s, f]) => ({ vis: (new Function('return ' + f))()(s), store: '' }), [sel, visibleSel.toString()]);
+        const st1 = await page.evaluate(store);
+        const go = await goesOn(page, s0);
+        const label = (MOBILE ? 'tap' : 'click') + ' on the consent button at ' + (when === 'mid' ? 'the middle of the build' : when + ' s');
+        check('interact: ' + label + ' — works at once (banner closed, choice stored), the effect goes on',
+          seen && s0.phase === 'build' && !after.vis && st1 !== st0 && go.ok,
+          (seen ? '' : 'button never visible; ') + 'banner ' + (after.vis ? 'still open' : 'closed') + ', storage ' + (st1 !== st0 ? 'changed' : 'unchanged') + ', at ' + s0.layersDone + '/' + s0.layersTotal + ' layers -> ' + go.why);
+        const end = await toEnd(page, bag, ref);
+        if (!domSame(end.g.dom, ref)) { const a = normDom(ref), d = normDom(end.g.dom), i = firstDiff(a, d); console.log('   (DOM difference: ref …' + JSON.stringify(a.slice(Math.max(0, i - 80), i + 60)) + ' / effect …' + JSON.stringify(d.slice(Math.max(0, i - 80), i + 60)) + ')'); }
+        check('interact: ' + label + ' — then the build runs to its end; the finished page equals the page after the same click without the effect, no layout shift, no errors',
+          end.ok && end.natural, 'exit ' + (end.g.s && end.g.s.lastExit) + ', DOM ' + (domSame(end.g.dom, ref) ? 'identical' : 'differs') + ', CLS ' + (end.g.cls || 0).toFixed(4) + ', hidden elements ' + end.hiddenLeft + (bag.length ? ', errors: ' + bag.slice(0, 2).join(' | ') : ''));
+        report.interact.consent[when] = { atLayers: s0.layersDone, total: s0.layersTotal, seenShare: end.natural ? 1 : +(s0.layersDone / Math.max(1, s0.layersTotal)).toFixed(3), exit: end.g.s && end.g.s.lastExit };
+        await ctx.close();
+      }
+      // keyboard: Tab to the button, then Enter (and Space)
+      for (const key of ['Enter', 'Space']) {
+        const { ctx, page, bag } = await openEffect('scroll', { after: 0.4 });
+        await page.waitForFunction(visibleSel, sel, { timeout: lateWait }).catch(() => {});
+        let hit = false, tabs = 0, hiddenFocus = 0;
+        for (; tabs < 80 && !hit; tabs++) {
+          await page.keyboard.press('Tab');
+          await page.waitForTimeout(40);
+          const f = await page.evaluate((s) => { const e = document.activeElement; return { hit: !!(e && e.matches && e.matches(s)), vis: e && e !== document.body ? getComputedStyle(e).visibility : 'visible' }; }, sel);
+          hit = f.hit; if (f.vis !== 'visible') hiddenFocus++;
+        }
+        const s0 = await page.evaluate(STATE), st0 = await page.evaluate(store);
+        if (hit) await page.keyboard.press(key);
+        await page.waitForTimeout(450);
+        const vis = await page.evaluate(visibleSel, sel), st1 = await page.evaluate(store);
+        const go = await goesOn(page, s0);
+        check('interact: keyboard — Tab to the consent button (' + tabs + ' Tabs, every focused element visible), ' + key + ' works, the effect goes on',
+          hit && hiddenFocus === 0 && !vis && st1 !== st0 && go.ok && !bag.length, (hit ? '' : 'button never focused; ') + 'hidden focus ' + hiddenFocus + ', banner ' + (vis ? 'still open' : 'closed') + ', ' + go.why + (s0.interact ? ', parts built at once for the focus ' + s0.interact.focusBuilds : ''));
+        await ctx.close();
+      }
+    });
+    // menus (drop-down, hamburger), fields, a pop-up, an in-page link, a client-side route
+    const pair = (v) => String(v).split('|');
+    const menuArg = MOBILE ? (args['menu-mobile'] || args.menu) : args.menu;
+    if (menuArg && menuArg !== true) await guard('menu', async () => {
+      const [tog, panel] = pair(menuArg);
+      const { ctx, page, bag } = await openEffect('scroll', { after: 0.4 });
+      const ok0 = await page.waitForFunction(visibleSel, tog, { timeout: 8000 }).then(() => true).catch(() => false);
+      const s0 = await page.evaluate(STATE);
+      const b = ok0 ? await (await page.$(tog)).boundingBox() : null;
+      if (b) await tapAt(page, b.x + b.width / 2, b.y + b.height / 2);
+      await page.waitForTimeout(400);
+      const open = await page.evaluate(visibleSel, panel);
+      const go = await goesOn(page, s0, 1200);
+      if (b) await tapAt(page, b.x + b.width / 2, b.y + b.height / 2);
+      await page.waitForTimeout(400);
+      const closed = !(await page.evaluate(visibleSel, panel));
+      const s2 = await page.evaluate(STATE);
+      const end = await toEnd(page, bag, null);
+      check('interact: ' + (MOBILE ? 'hamburger' : 'drop-down') + ' menu opens and closes during the build (' + tog + '), the effect goes on and ends complete',
+        ok0 && open && closed && go.ok && running(s2) && end.ok, 'toggle ' + (ok0 ? 'visible' : 'never visible') + ', panel ' + (open ? 'opened' : 'did not open') + ' / ' + (closed ? 'closed' : 'still open') + ', ' + go.why + ', relayouts ' + ((s2.interact || {}).relayouts || 0) + ', end: exit ' + (end.g.s && end.g.s.lastExit) + ', CLS ' + (end.g.cls || 0).toFixed(4) + ', hidden ' + end.hiddenLeft);
+      await ctx.close();
+    });
+    if (args.field && args.field !== true) await guard('field', async () => {
+      const sel = String(args.field), text = 'Kovács Éva 😀';
+      const { ctx, page, bag } = await openEffect('scroll', { after: 0.6 });
+      await page.evaluate((s) => document.querySelector(s).scrollIntoView({ block: 'center', behavior: 'instant' }), sel);
+      const ok0 = await page.waitForFunction(visibleSel, sel, { timeout: 8000 }).then(() => true).catch(() => false);
+      const s0 = await page.evaluate(STATE);
+      const b = await (await page.$(sel)).boundingBox();
+      await tapAt(page, b.x + b.width / 2, b.y + b.height / 2);
+      await page.keyboard.type(text, { delay: 35 });
+      const v = await page.$eval(sel, (e) => e.value);
+      const go = await goesOn(page, s0, 1200);
+      check('interact: typing into a form field during the build (' + sel + ') works (Space and letters too), the effect goes on',
+        ok0 && v === text && go.ok && !bag.length, 'value ' + JSON.stringify(v) + ', ' + go.why);
+      await ctx.close();
+    });
+    if (args.popup && args.popup !== true) await guard('popup', async () => {
+      const [opener, closer] = pair(args.popup);
+      const { ctx, page, bag } = await openEffect('scroll', { after: 0.8 });
+      const ok0 = await page.waitForFunction(visibleSel, opener, { timeout: 8000 }).then(() => true).catch(() => false);
+      const s0 = await page.evaluate(STATE);
+      let b = await (await page.$(opener)).boundingBox();
+      await tapAt(page, b.x + b.width / 2, b.y + b.height / 2);
+      await page.waitForTimeout(700);
+      const m1 = await page.evaluate(() => ({ s: window.SwarmRebuild.state(), ov: getComputedStyle(document.querySelector('#swarm-rebuild-root .sr-deco')).visibility }));
+      await page.waitForTimeout(800);
+      const m2 = await page.evaluate(STATE);
+      const closeVis = await page.evaluate(visibleSel, closer);
+      // Esc belongs to the pop-up: it closes it, the effect goes on
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(500);
+      const afterEsc = await page.evaluate(([c, f]) => ({ open: (new Function('return ' + f))()(c), s: window.SwarmRebuild.state() }), [closer, visibleSel.toString()]);
+      check('interact: a pop-up with a backdrop opens during the build, the build waits under it (overlay hidden), Esc closes the pop-up and not the effect',
+        ok0 && m1.s.modal && m1.ov === 'hidden' && closeVis && m2.layersDone === m1.s.layersDone && !afterEsc.open && running(afterEsc.s) && afterEsc.s.phase !== 'idle',
+        'modal ' + m1.s.modal + ', overlay ' + m1.ov + ', layers while open ' + m1.s.layersDone + ' -> ' + m2.layersDone + ', after Esc: pop-up ' + (afterEsc.open ? 'open' : 'closed') + ', effect ' + afterEsc.s.phase + (afterEsc.s.lastExit ? ' (' + afterEsc.s.lastExit + ')' : ''));
+      // open again, close with its button: the build resumes where it was
+      b = await (await page.$(opener)).boundingBox();
+      if (b) await tapAt(page, b.x + b.width / 2, b.y + b.height / 2);
+      await page.waitForTimeout(600);
+      const c = await (await page.$(closer)).boundingBox();
+      const s3 = await page.evaluate(STATE);
+      if (c) await tapAt(page, c.x + c.width / 2, c.y + c.height / 2);
+      await page.waitForTimeout(300);
+      const go = await goesOn(page, s3, 2000);
+      const end = await toEnd(page, bag, null);
+      check('interact: closed with its button, the build resumes where it was and ends complete',
+        s3.modal && go.ok && end.ok, go.why + ', paused ' + ((go.s.interact || {}).modalT || 0).toFixed(1) + ' s in total, end: exit ' + (end.g.s && end.g.s.lastExit) + ', CLS ' + (end.g.cls || 0).toFixed(4) + ', hidden ' + end.hiddenLeft + (bag.length ? ', errors ' + bag[0] : ''));
+      await ctx.close();
+    });
+    if (args.anchor && args.anchor !== true) await guard('anchor', async () => {
+      const sel = String(args.anchor);
+      const { ctx, page, bag } = await openEffect('scroll', { after: 0.8 });
+      const ok0 = await page.waitForFunction(visibleSel, sel, { timeout: 8000 }).then(() => true).catch(() => false);
+      const s0 = await page.evaluate(STATE);
+      const target = await page.$eval(sel, (a) => a.getAttribute('href'));
+      const b = await (await page.$(sel)).boundingBox();
+      await tapAt(page, b.x + b.width / 2, b.y + b.height / 2);
+      // the view is filled within ~2.5 s after the jump; nothing above it is left hidden
+      let filled = null, t0 = Date.now(), lastHidden = -1, sMid;
+      while (Date.now() - t0 < 4000) {
+        await page.waitForTimeout(250);
+        const x = await page.evaluate(() => {
+          const vh = innerHeight; let hid = 0, above = 0;
+          for (const e of document.body.querySelectorAll('*')) {
+            const c = getComputedStyle(e); if (c.display === 'none' || c.position === 'fixed' || e.closest('#swarm-rebuild-root')) continue;
+            const r = e.getBoundingClientRect(); if (r.width < 2 || r.height < 2) continue;
+            const paints = Array.from(e.childNodes).some((n) => n.nodeType === 3 && /\S/.test(n.data)) || /^(IMG|SVG|VIDEO|INPUT|BUTTON|SELECT|TEXTAREA)$/i.test(e.tagName);
+            if (!paints || c.visibility === 'visible') continue;
+            if (r.top >= 0 && r.bottom <= vh) hid++; else if (r.bottom < -Math.max(40, vh * 0.1)) above++;
+          }
+          return { hid, above, y: scrollY, s: window.SwarmRebuild.state() };
+        });
+        lastHidden = x.hid; sMid = x;
+        if (x.hid === 0 && filled == null) filled = (Date.now() - t0) / 1000;
+        if (filled != null && Date.now() - t0 > 1500) break;
+      }
+      const tgt = await page.evaluate((h) => { const e = h && h.length > 1 ? document.querySelector(h) : null; return e ? Math.round(e.getBoundingClientRect().top) : null; }, target);
+      const end = await toEnd(page, bag, null);
+      check('interact: an in-page link (' + target + ') jumps during the build, the new view is filled within 2.5 s, nothing above it stays hidden, the effect goes on',
+        ok0 && s0.phase === 'build' && tgt != null && Math.abs(tgt) < VH * 0.5 && filled != null && filled <= 2.5 && sMid && sMid.above === 0 && running(sMid.s) && end.ok,
+        'target at ' + tgt + ' px from the top, filled after ' + (filled != null ? filled.toFixed(2) + ' s' : 'never (hidden ' + lastHidden + ')') + ', hidden above ' + (sMid && sMid.above) + ', end: exit ' + (end.g.s && end.g.s.lastExit) + ', CLS ' + (end.g.cls || 0).toFixed(4));
+      report.interact.anchorFill = filled;
+      await ctx.close();
+    });
+    if (args.route && args.route !== true) await guard('route', async () => {
+      const sel = String(args.route);
+      const { ctx, page, bag } = await openEffect('scroll', { after: 0.8 });
+      const ok0 = await page.waitForFunction(visibleSel, sel, { timeout: 8000 }).then(() => true).catch(() => false);
+      const u0 = page.url();
+      const b = await (await page.$(sel)).boundingBox();
+      await tapAt(page, b.x + b.width / 2, b.y + b.height / 2);
+      await page.waitForTimeout(900);
+      const x = await page.evaluate(() => ({ s: window.SwarmRebuild.state(), hide: !!document.getElementById('swarm-rebuild-hide'), root: !!document.getElementById('swarm-rebuild-root'), cls: window.__cls,
+        hidden: Array.from(document.body.querySelectorAll('*')).filter((e) => { const c = getComputedStyle(e); const r = e.getBoundingClientRect(); return c.visibility === 'hidden' && c.display !== 'none' && r.width > 0 && r.bottom > 0 && r.top < innerHeight; }).length }));
+      check('interact: a client-side route change (' + sel + ') during the build shows the new page complete at once (the effect ends, nothing hidden)',
+        ok0 && page.url() !== u0 && x.s.phase === 'idle' && !x.hide && !x.root && x.hidden === 0 && (x.cls || 0) < 0.01 && !bag.length, 'url ' + (page.url() !== u0 ? 'changed' : 'unchanged') + ', exit ' + (x.s.lastExit || x.s.phase) + ', hidden in view ' + x.hidden + (bag.length ? ', errors ' + bag[0] : ''));
+      await ctx.close();
+    });
+    // ---------- what ends it: Esc; a double click / double tap on an empty spot. What does not: one click or tap on an
+    // empty spot, two slow taps, taps while the page scrolls
+    await guard('clicks and taps on an empty spot', async () => {
+      const { ctx, page } = await openEffect('scroll', { after: 1 });
+      const sp = await page.evaluate(EMPTY_SPOT);
+      const s0 = await page.evaluate(STATE);
+      if (sp) await tapAt(page, sp.x, sp.y);
+      await page.waitForTimeout(600);
+      if (MOBILE && sp) { await page.touchscreen.tap(sp.x, sp.y); await page.waitForTimeout(700); await page.touchscreen.tap(sp.x, sp.y); await page.waitForTimeout(300); }
+      let s1 = await page.evaluate(STATE);
+      let scrollTaps = 'n/a';
+      if (MOBILE && sp && s1.phase === 'build') {
+        await page.mouse.wheel(0, 300); await page.waitForTimeout(60);
+        await page.touchscreen.tap(sp.x, sp.y); await page.waitForTimeout(90); await page.touchscreen.tap(sp.x, sp.y);
+        await page.waitForTimeout(300);
+        const s2 = await page.evaluate(STATE); scrollTaps = s2.phase === 'idle' ? 'ended it' : 'ignored'; s1 = s2;
+      }
+      check('interact: ' + (MOBILE ? 'one tap, two slow taps and a quick double tap while the page scrolls' : 'one click') + ' on an empty spot do not end the effect',
+        !!sp && s0.phase === 'build' && running(s1) && s1.phase !== 'idle', (sp ? sp.what + ' at ' + sp.x + ',' + sp.y : 'no empty spot found') + ', effect ' + s1.phase + (s1.lastExit ? ' (' + s1.lastExit + ')' : '') + (MOBILE ? ', double tap while scrolling ' + scrollTaps : ''));
+      await page.waitForTimeout(500);
+      const sp2 = await page.evaluate(EMPTY_SPOT);
+      if (sp2) { if (MOBILE) { await page.touchscreen.tap(sp2.x, sp2.y); await page.waitForTimeout(110); await page.touchscreen.tap(sp2.x, sp2.y); } else await page.mouse.dblclick(sp2.x, sp2.y); }
+      await page.waitForTimeout(300);
+      const g = await page.evaluate(gone);
+      check('interact: a double ' + (MOBILE ? 'tap' : 'click') + ' on an empty spot ends the effect on purpose: the finished page at once, no layout shift',
+        !!sp2 && g.s && g.s.phase === 'idle' && /dbl/.test(g.s.lastExit || '') && !g.root && !g.hide && (g.cls || 0) < 0.01, 'exit ' + (g.s && g.s.lastExit) + ', CLS ' + (g.cls || 0).toFixed(4));
+      await ctx.close();
+    });
+    await guard('Esc', async () => {
+      const { ctx, page } = await openEffect('scroll', { after: 1 });
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(250);
+      const g = await page.evaluate(gone);
+      check('interact: Esc ends the effect: the finished page at once (DOM identical), no layout shift', g.s && g.s.phase === 'idle' && g.s.lastExit === 'esc' && isFinished(g, baseDom) && (g.cls || 0) < 0.01, 'exit ' + (g.s && g.s.lastExit) + ', CLS ' + (g.cls || 0).toFixed(4));
+      await ctx.close();
+    });
+    await guard('reduced motion', async () => {
+      const rc = await newCtx({ reducedMotion: 'reduce' });
+      const rp = await rc.newPage();
+      await rp.goto(effectUrl('scroll'), { waitUntil: 'load' });
+      await rp.waitForTimeout(800);
+      const g = await rp.evaluate(gone);
+      check('interact: prefers-reduced-motion still switches the effect off', !g.root && !g.hide && g.s && g.s.phase === 'idle', 'overlay ' + g.root + ', hiding ' + g.hide);
+      await rc.close();
+    });
+  }
+
+  if (CHECKS.has('seen')) {
+    // ---------- how much of the effect a visitor sees who presses Accept right at the start (also with an older module: --module)
+    report.seen = {};
+    const sel = String(args.consent || '');
+    for (const when of [0.5, 2]) {
+      const { ctx, page } = await openEffect('scroll', { after: when });
+      const ok = sel ? await page.waitForFunction((s) => { const e = document.querySelector(s); return e && e.getBoundingClientRect().width > 0 && getComputedStyle(e).visibility === 'visible'; }, sel, { timeout: 9000 }).then(() => true).catch(() => false) : false;
+      const s0 = await page.evaluate(STATE);
+      const t0 = Date.now();
+      if (ok) { const b = await (await page.$(sel)).boundingBox(); if (MOBILE) await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2); else await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2); }
+      await page.waitForTimeout(300);
+      const s1 = await page.evaluate(STATE);
+      let r = { s: s1 };
+      if (s1.phase === 'build') r = await readDown(page, 0.5, 400, 70000);
+      const runFor = (Date.now() - t0) / 1000;
+      const natural = r.s.phase === 'done' || (r.s.phase === 'idle' && r.s.lastExit === 'auto');
+      const share = natural ? 1 : s0.layersDone / Math.max(1, s0.layersTotal);
+      report.seen[when] = { atLayers: s0.layersDone, total: s0.layersTotal, share: +share.toFixed(3), effectAfterClick: natural ? +runFor.toFixed(1) : 0, exit: s1.phase === 'idle' ? s1.lastExit : 'went on' };
+      check('seen: Accept at ' + when + ' s — the visitor sees ' + Math.round(share * 100) + ' % of the build', ok && share > 0.9, 'clicked at ' + s0.layersDone + '/' + s0.layersTotal + ' layers, effect ' + (s1.phase === 'idle' ? 'ended (' + s1.lastExit + ')' : 'went on for ' + runFor.toFixed(1) + ' s more'));
       await ctx.close();
     }
   }
@@ -974,7 +1295,7 @@ function fixedTargets() {
       check('a11y: screen readers get a status message while the page is hidden (outside <body>)', x.phase === 'build' && x.role === 'status' && x.text.length > 10 && !x.inBody, '[' + (x.lang || '?') + '] "' + x.text + '"');
       await ctx.close();
     }
-    // ---------- the first Tab ends the effect and focus lands where it would without the effect
+    // ---------- the first Tab moves the focus where it would without the effect, the focused part is shown at once, the build goes on
     {
       const bc = await newCtx();
       const bp2 = await bc.newPage();
@@ -987,10 +1308,15 @@ function fixedTargets() {
       const s0 = await page.evaluate(STATE);
       await page.keyboard.press('Tab');
       await page.waitForTimeout(150);
-      const got = await page.evaluate(() => { const e = document.activeElement; return { el: e && e !== document.body ? e.outerHTML.slice(0, 120) : 'body', vis: e ? getComputedStyle(e).visibility : '', st: window.SwarmRebuild.state(), msg: !!document.getElementById('swarm-rebuild-root-status') }; });
-      check('a11y: the first Tab ends the effect, focus lands where it would without it (no focus trap)', s0.phase === 'build' && got.st.phase === 'idle' && got.el === want && (got.el === 'body' || got.vis === 'visible'),
-        'focus on ' + got.el.slice(0, 70) + (got.el === want ? ' (same as without the effect)' : ' (without the effect: ' + want.slice(0, 70) + ')'));
-      check('a11y: the status message is gone afterwards', !got.msg);
+      const got = await page.evaluate(() => { const e = document.activeElement; return { el: e && e !== document.body ? e.outerHTML.slice(0, 120) : 'body', vis: e ? getComputedStyle(e).visibility : '', st: window.SwarmRebuild.state() }; });
+      check('a11y: the first Tab lands where it would without the effect (no focus trap), the focused part is visible at once, the build goes on',
+        s0.phase === 'build' && (got.st.phase === 'build' || got.st.phase === 'done') && got.el.replace(/ style="[^"]*"/, '') === want.replace(/ style="[^"]*"/, '') && (got.el === 'body' || got.vis === 'visible'),
+        'focus on ' + got.el.slice(0, 70) + (got.el === want ? ' (same as without the effect)' : ' (without the effect: ' + want.slice(0, 70) + ')') + ', ' + got.vis + ', effect ' + got.st.phase);
+      // keyboard users can always leave: Esc
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+      const aft = await page.evaluate(() => ({ st: window.SwarmRebuild.state(), msg: !!document.getElementById('swarm-rebuild-root-status'), hide: !!document.getElementById('swarm-rebuild-hide') }));
+      check('a11y: Esc then shows the whole page; the status message is gone afterwards', aft.st.phase === 'idle' && !aft.msg && !aft.hide, 'effect ' + aft.st.phase + ' (' + (aft.st.lastExit || '') + ')');
       await ctx.close();
     }
   }
@@ -1194,10 +1520,11 @@ function fixedTargets() {
           slowF.length >= 2 && fastF.length >= 2 && ds > df * 1.25,
           'slow (120 px/s): ' + slowF.length + ' follows, avg ' + r3(ds) + ' s; fast (1300 px/s): ' + fastF.length + ' follows, avg ' + r3(df) + ' s');
         check('motion: mouse — moving the pointer does not end the effect', s2.phase === 'done', s2.phase);
-        await page.mouse.click(5, VH - 5);
+        const sp = await page.evaluate(EMPTY_SPOT);
+        if (sp) await page.mouse.dblclick(sp.x, sp.y);
         await page.waitForTimeout(300);
         const s3 = await page.evaluate(STATE);
-        check('motion: mouse — a click afterwards still ends it', s3.phase === 'idle', s3.phase + ' ' + (s3.lastExit || ''));
+        check('motion: mouse — a double click on an empty spot afterwards ends it', s3.phase === 'idle' && /dbl/.test(s3.lastExit || ''), s3.phase + ' ' + (s3.lastExit || '') + (sp ? ' at ' + sp.x + ',' + sp.y + ' (' + sp.what + ')' : ', no empty spot found'));
       } else {
         check('motion: touch device — simpler motion, no mouse play', s.lite === true && s.mouseOn === false && (s.swarms || []).length <= 2, 'lite ' + s.lite + ', mouse ' + s.mouseOn + ', swarms ' + JSON.stringify(s.swarms));
       }
