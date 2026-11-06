@@ -1229,21 +1229,23 @@ function fixedTargets() {
         const R = window.SwarmRebuild;
         if (root && R && R.state().phase === 'build') {
           v.frames++;
-          const rests = root.querySelectorAll('sr-r');
-          let lastTyped = null;
-          rests.forEach((r) => {
-            const n = r.previousSibling;
-            if (!n || n.nodeType !== 3 || !r.textContent || !n.data) return;
+          // typed texts: split ones (typed text node + <sr-r> rest) and right-to-left ones whose rest is a CSS highlight range
+          const items = [];
+          root.querySelectorAll('sr-r').forEach((r) => { const n = r.previousSibling; if (n && n.nodeType === 3 && r.textContent) items.push({ n, k: n.data.length, full: n.data + r.textContent, par: r.parentNode }); });
+          const hl = window.CSS && CSS.highlights && CSS.highlights.get('sr-rest');
+          if (hl) hl.forEach((h) => { const n = h.startContainer; if (n && n.nodeType === 3 && root.contains(n) && h.startOffset < n.data.length) items.push({ n, k: h.startOffset, full: n.data, par: n.parentNode }); });
+          items.forEach((it) => {
+            if (!it.k) return;
             v.cuts++;
-            const full = n.data + r.textContent, k = n.data.length;
+            const full = it.full, k = it.k;
             if (/[؀-ۿ]/.test(full)) v.scripts.arabic = 1; if (/[֐-׿]/.test(full)) v.scripts.hebrew = 1;
             if (/[぀-ヿ一-鿿]/.test(full)) v.scripts.cjk = 1; if (/[\u{1F300}-\u{1FAFF}]/u.test(full)) v.scripts.emoji = 1; if (/[őűŐŰ]/.test(full)) v.scripts.hungarian = 1;
             let ok = true;
             if (seg) { ok = false; for (const s of seg.segment(full)) { if (s.index === k) { ok = true; break; } if (s.index > k) break; } }
-            else { const c = n.data.charCodeAt(k - 1); ok = !(c >= 0xD800 && c <= 0xDBFF); }
+            else { const c = full.charCodeAt(k - 1); ok = !(c >= 0xD800 && c <= 0xDBFF); }
             if (!ok) { v.splits++; if (v.ex.length < 4) v.ex.push(JSON.stringify(full.slice(Math.max(0, k - 3), k) + '|' + full.slice(k, k + 3))); }
-            lastTyped = n;
           });
+          if (hl) v.hlMode = (v.hlMode || 0) + 1;
           // caret: next to the last typed character of the text being typed, on its writing side
           root.querySelectorAll('.sr-caret').forEach((c) => {
             const m = /translate3d\(([-\d.]+)px,\s*([-\d.]+)px/.exec(c.style.transform || '');
@@ -1251,19 +1253,17 @@ function fixedTargets() {
             const cx = parseFloat(m[1]) - scrollX, cy = parseFloat(m[2]) - scrollY;
             // the typed text whose end is nearest to the caret (several texts can be typed on one line at once)
             let best = null;
-            rests.forEach((r) => {
-              const n = r.previousSibling;
-              if (n && n.nodeType === 3 && !n.data && r.parentNode) {
+            items.forEach((it) => {
+              if (!it.k && it.par) {
                 // nothing typed yet: the caret waits at the start edge of the text
-                const pr = r.parentNode.getBoundingClientRect(), rtl0 = getComputedStyle(r.parentNode).direction === 'rtl';
+                const pr = it.par.getBoundingClientRect(), rtl0 = getComputedStyle(it.par).direction === 'rtl';
                 if (Math.abs(pr.top - cy) <= 4) { const want = rtl0 ? pr.right - 3 : pr.left + 1, d = Math.abs(cx - want); if (!best || d < best.d) best = { d, ch: '(start)', rtl: rtl0, want }; }
                 return;
               }
-              if (!n || n.nodeType !== 3 || !n.data) return;
-              const e = n.data.length, s0 = seg ? (() => { let st = 0; for (const s of seg.segment(n.data)) st = s.index; return st; })() : e - 1;
-              rng.setStart(n, s0); rng.setEnd(n, e); const rc = rng.getBoundingClientRect();
+              const typed = it.full.slice(0, it.k), e = it.k, s0 = seg ? (() => { let st = 0; for (const s of seg.segment(typed)) st = s.index; return st; })() : e - 1;
+              rng.setStart(it.n, s0); rng.setEnd(it.n, e); const rc = rng.getBoundingClientRect();
               if (Math.abs(rc.top - cy) > 4) return;
-              const ch = n.data.slice(s0), rtl = RTL.test(ch) ? true : LTR.test(ch) ? false : getComputedStyle(n.parentNode).direction === 'rtl';
+              const ch = typed.slice(s0), rtl = RTL.test(ch) ? true : LTR.test(ch) ? false : getComputedStyle(it.n.parentNode).direction === 'rtl';
               const want = rtl ? rc.left - 3 : rc.right + 1, d = Math.abs(cx - want);
               if (!best || d < best.d) best = { d, ch, rtl, want };
             });

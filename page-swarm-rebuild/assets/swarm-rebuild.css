@@ -161,3 +161,6 @@
 @media (prefers-reduced-motion: reduce) {
   #swarm-rebuild-root { display: none; }
 }
+
+/* typing right-to-left text: the part not typed yet stays in place, only transparent (see Typer, restHL) */
+::highlight(sr-rest) { color: transparent; text-shadow: none; text-decoration-color: transparent; }

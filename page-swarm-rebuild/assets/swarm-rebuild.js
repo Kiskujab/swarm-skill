@@ -344,12 +344,28 @@
     }
   };
   Typer.prototype.count = function () { this.prep(); return this.total; };
+  // Right-to-left text is never split: the part not typed yet is made transparent with a CSS custom highlight
+  // (::highlight(sr-rest) in the stylesheet), so the line is laid out once and nothing moves. Splitting it into two
+  // nodes made the browser place numbers / Latin words inside Arabic lines a fraction of a pixel differently at every
+  // step (a layout shift of the overlay copy). Browsers without the Highlight API keep the split.
+  function restHL() {
+    if (restHL.h !== undefined) return restHL.h;
+    try { restHL.h = window.CSS && CSS.highlights && window.Highlight ? new Highlight() : null; if (restHL.h) CSS.highlights.set('sr-rest', restHL.h); } catch (e) { restHL.h = null; }
+    return restHL.h;
+  }
+  function restHLclear() { try { if (restHL.h) { restHL.h.clear(); CSS.highlights.delete('sr-rest'); } } catch (e) { /* ignore */ } restHL.h = undefined; }
   Typer.prototype.set = function (k) {
     this.prep();
     var rem = Math.max(0, Math.floor(k)), last = null;
     for (var i = 0; i < this.nodes.length; i++) {
       var o = this.nodes[i], take = Math.min(rem, o.ends.length);
-      if (o.shown !== take) {
+      if (o.shown !== take && o.dir && restHL()) {
+        var cut0 = take ? o.ends[take - 1] : 0;
+        if (!o.hr) { o.hr = document.createRange(); restHL.h.add(o.hr); }
+        o.hr.setStart(o.n, cut0); o.hr.setEnd(o.n, o.full.length);
+        if (cut0 >= o.full.length) { restHL.h.delete(o.hr); o.hr = null; }
+        o.shown = take; o.cutAt = cut0;
+      } else if (o.shown !== take) {
         if (!o.rest) { // created on first use only (copies that are never typed keep their structure)
           o.rest = document.createElement('sr-r');
           o.rest.setAttribute('style', 'all:unset;visibility:hidden');
@@ -370,7 +386,7 @@
       own(this.caret);
     }
     if (this.caret && last && last.n.parentNode) {
-      var r = this.range || (this.range = document.createRange()), len = last.n.data.length, rc, rtl;
+      var r = this.range || (this.range = document.createRange()), len = last.cutAt != null ? last.cutAt : last.n.data.length, rc, rtl;
       if (len) {
         var g = last.shown, a0 = g > 1 ? last.ends[g - 2] : 0, ch = last.full.slice(a0, len);
         r.setStart(last.n, a0); r.setEnd(last.n, len); rc = r.getBoundingClientRect();
@@ -384,7 +400,8 @@
       this.caret.style.transform = 'translate3d(' + ((rtl ? rc.left - 3 : rc.right + 1) + window.scrollX) + 'px,' + (rc.top + window.scrollY) + 'px,0)';
     }
   };
-  Typer.prototype.end = function () { if (this.total >= 0) this.set(this.total); rm(this.caret); this.caret = null; };
+  Typer.prototype.drop = function () { for (var i = 0; i < this.nodes.length; i++) { var o = this.nodes[i]; if (o.hr && restHL.h) { restHL.h.delete(o.hr); o.hr = null; } } };
+  Typer.prototype.end = function () { if (this.total >= 0) this.set(this.total); rm(this.caret); this.caret = null; this.drop(); };
   Typer.prototype.done = function () { rm(this.caret); this.caret = null; this.noCaret = true; }; // typing finished: no caret
 
   // -------------------------------------------------------------- overlay UI
@@ -2739,6 +2756,7 @@
     if (st.dbg) { try { st.dbg.teardown(st); } catch (e) { /* ignore */ } }
     rm(st.root);
     rm(st.a11y);
+    restHLclear();
     removeStyles();
     dmsStop();
     S = null;
