@@ -269,7 +269,8 @@ function fixedTargets() {
     watchConsole(page, bag);
     await page.goto(effectUrl(mode, o), { waitUntil: o.waitUntil || 'domcontentloaded' });
     if (o.waitBuild !== false) {
-      await page.waitForFunction(() => window.SwarmRebuild && window.SwarmRebuild.state().phase === 'build', null, { timeout: 20000 }).catch(() => {});
+      // (a consent wall at load holds the opening: waiting for it counts as started)
+      await page.waitForFunction(() => { const s = window.SwarmRebuild && window.SwarmRebuild.state(); return s && (s.phase === 'build' || s.modal); }, null, { timeout: 20000 }).catch(() => {});
       if (o.after) await page.waitForTimeout(o.after * 1000);
     }
     return { ctx, page, bag, st: () => page.evaluate(STATE).catch(() => ({ phase: 'err' })) };
@@ -638,7 +639,7 @@ function fixedTargets() {
     const tapAt = async (page, x, y) => { if (MOBILE) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); };
     const visibleSel = (s) => { const e = document.querySelector(s); if (!e) return false; const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility === 'visible' && cs.display !== 'none' && r.bottom > 0 && r.top < innerHeight; };
     const store = () => { let l = ''; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); l += k + '=' + localStorage.getItem(k) + ';'; } } catch (e) { /* ignore */ } return l + '|' + document.cookie; };
-    const running = (s) => s.phase === 'build' || s.phase === 'done' || (s.phase === 'idle' && s.lastExit === 'auto');
+    const running = (s) => s.phase === 'scan' || s.phase === 'build' || s.phase === 'done' || (s.phase === 'idle' && s.lastExit === 'auto');
     // after an action: the effect is still on and makes progress (or finished by itself)
     async function goesOn(page, s0, ms = 1600) {
       let s = s0, worked = false;
@@ -682,10 +683,11 @@ function fixedTargets() {
       report.interact.consent = {};
       for (const when of ['0.5', '2', 'mid']) {
         const { ctx, page, bag } = await openEffect('scroll', { after: when === 'mid' ? 0.2 : +when });
+        if (when === 'mid' && (await page.evaluate(STATE)).modal) { console.log('   (middle of the build: not applicable, the consent dialog holds the build until it is answered)'); await ctx.close(); continue; }
         if (when === 'mid') { // half of the build, read like a visitor
           const tEnd = Date.now() + 40000;
           for (;;) { const s = await page.evaluate(STATE); if (s.phase !== 'build' || s.layersDone >= s.layersTotal * 0.45 || Date.now() > tEnd) break; await page.mouse.wheel(0, Math.round(VH * 0.3)); await page.waitForTimeout(350); }
-          await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' })); await page.waitForTimeout(400);
+          if (!(await page.evaluate(visibleSel, sel))) { await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' })); await page.waitForTimeout(400); }
         }
         const seen = await page.waitForFunction(visibleSel, sel, { timeout: lateWait }).then(() => true).catch(() => false);
         const s0 = await page.evaluate(STATE), st0 = await page.evaluate(store);
@@ -697,7 +699,7 @@ function fixedTargets() {
         const go = await goesOn(page, s0);
         const label = (MOBILE ? 'tap' : 'click') + ' on the consent button at ' + (when === 'mid' ? 'the middle of the build' : when + ' s');
         check('interact: ' + label + ' — works at once (banner closed, choice stored), the effect goes on',
-          seen && s0.phase === 'build' && !after.vis && st1 !== st0 && go.ok,
+          seen && (s0.phase === 'build' || s0.modal) && !after.vis && st1 !== st0 && go.ok,
           (seen ? '' : 'button never visible; ') + 'banner ' + (after.vis ? 'still open' : 'closed') + ', storage ' + (st1 !== st0 ? 'changed' : 'unchanged') + ', at ' + s0.layersDone + '/' + s0.layersTotal + ' layers -> ' + go.why);
         const end = await toEnd(page, bag, ref);
         if (!domSame(end.g.dom, ref)) { const a = normDom(ref), d = normDom(end.g.dom), i = firstDiff(a, d); console.log('   (DOM difference: ref …' + JSON.stringify(a.slice(Math.max(0, i - 80), i + 60)) + ' / effect …' + JSON.stringify(d.slice(Math.max(0, i - 80), i + 60)) + ')'); }
@@ -848,8 +850,17 @@ function fixedTargets() {
     });
     // ---------- what ends it: Esc; a double click / double tap on an empty spot. What does not: one click or tap on an
     // empty spot, two slow taps, taps while the page scrolls
+    // a consent dialog on a backdrop is answered first (it holds the build, and Esc belongs to it)
+    const clearModal = async (page) => {
+      if (!(await page.evaluate(STATE)).modal || !args.consent) return;
+      const b = await (await page.$(String(args.consent))).boundingBox();
+      await tapAt(page, b.x + b.width / 2, b.y + b.height / 2);
+      await page.waitForFunction(() => window.SwarmRebuild.state().phase === 'build', null, { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(800);
+    };
     await guard('clicks and taps on an empty spot', async () => {
       const { ctx, page } = await openEffect('scroll', { after: 1 });
+      await clearModal(page);
       const sp = await page.evaluate(EMPTY_SPOT);
       const s0 = await page.evaluate(STATE);
       if (sp) await tapAt(page, sp.x, sp.y);
@@ -876,6 +887,17 @@ function fixedTargets() {
     });
     await guard('Esc', async () => {
       const { ctx, page } = await openEffect('scroll', { after: 1 });
+      if ((await page.evaluate(STATE)).modal) {
+        // Esc with a modal open belongs to the page; twice within 1.5 s always ends the effect
+        await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+        const s1 = await page.evaluate(STATE);
+        await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+        const g2 = await page.evaluate(gone);
+        check('interact: with a modal open, one Esc belongs to the page, Esc twice ends the effect', s1.phase !== 'idle' && g2.s && g2.s.phase === 'idle' && !g2.root && !g2.hide,
+          'after one Esc ' + s1.phase + ', after two ' + (g2.s && g2.s.phase) + ' (' + (g2.s && g2.s.lastExit) + ')');
+        await ctx.close();
+        return;
+      }
       await page.keyboard.press('Escape');
       await page.waitForTimeout(250);
       const g = await page.evaluate(gone);

@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.4.0 — 2026-11-06 — visitors can use the page while it builds
+
+Why 1.4.0 and not 1.3.1: the default behaviour changes (what ends the effect) and there are new options; the old
+behaviour stays available with `exitOn: 'any'`.
+
+Module (`assets/`)
+- **Clicks, taps and keys on the page no longer end the effect.** A consent banner, a pop-up, a menu, a language
+  switcher, form fields, a chat widget, links and buttons work as usual with the mouse, by touch and with the keyboard
+  (Tab, Enter, Space, typing), and the build goes on. In 1.3.0 every click or key ended it: on a page that opens with a
+  consent banner, a visitor who pressed "Accept" right away saw about 5-15 % of the effect (measured below).
+- **Ending it is deliberate** (new option `exitOn`, default `'intent'`): Esc ends it (not when the page uses that Esc for
+  its own open dialog, menu or list; a second Esc within 1.5 s always ends it), and so does a double click / double tap
+  on an empty spot (not on a control, a dialog, a fixed bar or text; a double tap does not zoom). One click or tap,
+  two slow taps and taps while the page scrolls never end it. `'esc'` = only Esc, `'any'` = 1.3.0.
+- **Keyboard focus on a part that is not built yet builds that part at once**, so the focus ring is always visible;
+  the screen-reader message (19 languages) now says "press Escape".
+- **The page's own surfaces are never built:** dialogs (`<dialog>`, `role="dialog"`, `aria-modal`),
+  `[data-swarm-surface]` and elements named like a consent banner (consent, gdpr, cookie-banner, cookie-bar ...; not
+  `cookie-card`), also a bar at the top in the page flow, are shown at once and cut out of the overlay (new options
+  `surface`, `surfaceNames`). Fixed elements hidden at the scan (a pop-up shown later) are cut out when they appear.
+- **Layout changes made by the page are followed:** a consent bar at the top that closes and moves the content up, a
+  menu or accordion that pushes the content, a late font or image. A few elements are checked every 0.15 s (0.05 s right
+  after a click or key); when one moved, all parts are measured again; a part being built at that moment is finished
+  at once, parts removed by the page are dropped. The reveal rules are renewed in the same task as the DOM change
+  (before the next paint). CLS stays 0.
+- **A modal with a backdrop pauses the build** (new option `pauseOnModal`): the overlay is hidden, the build and the
+  watchdogs wait, and everything goes on where it was when it closes. A consent wall at load holds the opening.
+- **Client-side navigation:** a new URL (not a hash change) or most of the unbuilt content removed shows the new page
+  complete at once.
+
+Verify (`scripts/verify.cjs`)
+- New group `interact` (options `--consent`, `--menu`, `--menu-mobile`, `--field`, `--popup`, `--anchor`, `--route`,
+  `--late`) and `seen`; `--module <file>` serves another module file (e.g. 1.3.0) for comparisons. `product`, `a11y`
+  and `motion` follow the new rules (only Esc / a double click end the effect; Tab lands where it would without it).
+
+Test pages
+- New `tests/pages/bakery`: a bakery-café with a consent banner in four forms (`?banner=top|modal|bottom|late`),
+  drop-down and hamburger menu, language switcher, order form, newsletter pop-up with a backdrop, chat widget added
+  later, in-page links; on the landing page and in the Pages build.
+
+Size: module 30.8 KB gzip (budget raised from 30 to 32 KB for the interaction handling), stylesheet 1.6 KB.
+
 ## 1.3.0 — 2026-11-05 — visible-only build, any language, safe install
 
 Module (`assets/`)

@@ -1,5 +1,5 @@
 /*!
- * swarm-rebuild-debug v1.3.0 — test and debug add-on for swarm-rebuild.js.
+ * swarm-rebuild-debug v1.4.0 — test and debug add-on for swarm-rebuild.js.
  * Not for visitors: loaded only with ?rebuild-debug=1 or the debug: true option (the module fetches this
  * file next to itself; with a bundler import it before the module).
  *

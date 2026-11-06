@@ -1,5 +1,5 @@
 /*!
- * swarm-rebuild v1.3.0
+ * swarm-rebuild v1.4.0
  * "The page rebuilds itself": a swarm of agent cursors re-creates an existing
  * page layer by layer (frames, typing, image reveals, clone-and-rewrite),
  * following the visitor's scrolling. Free agents fly in swarms around a focus
@@ -27,7 +27,7 @@
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   if (window.SwarmRebuild && window.SwarmRebuild.version) return;
 
-  var VERSION = '1.3.0';
+  var VERSION = '1.4.0';
   var LAYER = 'swarm-rebuild';
   var HIDE_ID = 'swarm-rebuild-hide';
   var REVEAL_ID = 'swarm-rebuild-reveal';
@@ -875,8 +875,14 @@
     try {
       if (el.closest(ACTION) || el.closest(PAGE_ESC) || (st.surfaceSel && el.closest(st.surfaceSel))) return false;
       for (var p = el; p && p !== document.body; p = p.parentElement) if (getComputedStyle(p).position === 'fixed') return false; // a bar, banner or widget
+      // a double click on a word selects it (normal use); one on the free space next to text makes the browser select the
+      // nearest word: that selection is dropped and it counts as an empty spot
       var s = window.getSelection && window.getSelection();
-      if (s && !s.isCollapsed && String(s).trim()) return false; // selects a word: normal use
+      if (s && !s.isCollapsed && String(s).trim() && s.rangeCount) {
+        var rr = s.getRangeAt(0).getBoundingClientRect();
+        if (x >= rr.left - 6 && x <= rr.right + 6 && y >= rr.top - 6 && y <= rr.bottom + 6) return false;
+        s.removeAllRanges();
+      }
     } catch (e) { return false; }
     return true;
   }
@@ -1061,12 +1067,13 @@
       // not animated, but final already, so it appears complete whenever the page shows it during the build
       if (cs.display === 'none') { offNow.push(el); if (cs.position === 'fixed') st.fixedEls.push(el); return null; } // (a pop-up the page opens later)
       if (cs.display === 'contents') return { el: el, cs: cs, contents: true };
-      if (cs.visibility !== 'visible') { natHidden.push(el); return null; } // hidden by the page itself: leave alone
+      // (a fixed one may be a consent manager or a pop-up the page shows later: it must never be covered then)
+      if (cs.visibility !== 'visible') { natHidden.push(el); if (cs.position === 'fixed') st.fixedEls.push(el); return null; } // hidden by the page itself: leave alone
       if (parseFloat(cs.opacity) < 0.05) {
         // a part of the page flow at opacity 0 is a scroll-reveal section (it fades in when it comes into view, about
         // when it is built here): built like the rest; a small or floating one (tooltip, menu) is final at once
         var rr = el.getBoundingClientRect();
-        if (!(/^(static|relative)$/.test(cs.position) && rr.width >= 40 && rr.height >= 20 && el.firstElementChild)) { offNow.push(el); return null; }
+        if (!(/^(static|relative)$/.test(cs.position) && rr.width >= 40 && rr.height >= 20 && el.firstElementChild)) { offNow.push(el); if (cs.position === 'fixed') st.fixedEls.push(el); return null; }
       }
       if (cs.position === 'fixed' || cs.position === 'sticky') st.fixedEls.push(el);
       if (cs.position === 'sticky') st.stickyEls.push(el);

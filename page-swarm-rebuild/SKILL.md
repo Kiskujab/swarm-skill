@@ -5,7 +5,7 @@ description: Adds the "page rebuilds itself" effect to an existing website (plai
 
 # page-swarm-rebuild
 
-Version 1.3.0 (module, add-on, stylesheet and this file; see `CHANGELOG.md` in the repository; `SwarmRebuild.version`).
+Version 1.4.0 (module, add-on, stylesheet and this file; see `CHANGELOG.md` in the repository; `SwarmRebuild.version`).
 
 Presentation-only intro effect. The page's real DOM is never modified: layers are hidden and revealed with one
 cascade-layered stylesheet in `<head>`, all animation happens in an overlay appended to `<html>`, and both are removed
@@ -29,6 +29,7 @@ and this file disagree, this file wins (product decisions were made after the de
 | `tests/pages/dental/` | Fictional dental practice: light theme, phone links, fixed "Call us" + booking bar (mobile), fixed notice (desktop). |
 | `tests/pages/lang-*/` | Fictional pages in Hungarian, Arabic (right to left), Japanese and an emoji-rich one (typing in any language). |
 | `tests/pages/law/`, `accounting/`, `bootstrap/`, `spa/` | Fictional real-world patterns: web fonts, sticky header, consent banners, iframe, lazy images, dark mode, long page, scroll-reveal, Bootstrap (npm), single-page app, videos. |
+| `tests/pages/bakery/` | Fictional bakery-café used while it builds: consent banner in four forms (`?banner=top` in the page flow, `modal` on a backdrop, `bottom` fixed, `late` added by a script), drop-down and hamburger menu, language switcher, order form, newsletter pop-up, chat widget, in-page links (`interact` group). |
 | `tests/pages/nextjs/` | Fictional Next.js 15 App Router app: React counter (hydration check), fixed Help button. |
 | `scripts/verify.cjs` | Playwright check of one page (see step 4). |
 | `scripts/run-tests.cjs` | Runs `verify.cjs` on the three test pages, desktop and mobile; prints a summary table. |

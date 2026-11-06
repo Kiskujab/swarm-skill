@@ -27,10 +27,9 @@ Working notes so that work can continue after a context reset. Keep this file cu
 - Main and default mode `scroll`; `fast` = scroll at 6x; `tour` (auto-scroll) is a debug/recording tool only.
 - Control bar + tour + test hooks in a separate file (`swarm-rebuild-debug.js`), loaded lazily only with
   `?rebuild-debug=1` / `debug: true`: visitors never download it. Its CSS is inside the add-on.
-- Exit: Esc, any key except a lone modifier, any click / tap. The ending click is swallowed only when it lands on
-  unfinished content (would act on something unseen); on finished content it goes through (a visible phone link must
-  work at the first tap). Mouse is handled at `pointerdown` (also blocks focus / mousedown handlers), touch at `click`
-  (touchstart can be a scroll). Touch scrolling and the scrollbar do not end the effect.
+- (1.4, replaces the 1.0-1.3 rule "any click / key ends it") Exit only on purpose: Esc (not when the page uses it for its
+  own dialog / menu; Esc twice always) or a double click / double tap on an empty spot (`exitOn`, `'any'` = the old rule).
+  Clicks, taps and keys on the page work and the build goes on. See "Task 5" below.
 - Above the view (0.1 viewport, min. 40 px band): final at once; clone groups per copy.
 - Watchdogs: task 8 s, frame loop 2.5 s, scan 6 s, no progress 10 s. Dead-man switch: Web Animation on `<html>`
   (5 s, refreshed every 0.4 s; 600 s while the tab is hidden), also started by the head snippet. Elements the page
@@ -61,6 +60,63 @@ Working notes so that work can continue after a context reset. Keep this file cu
 - (1.2) Scroll keys scroll (on the page itself, no modifier); Tab / Enter / Esc and the rest end the effect.
 - (1.2) Idle swarms during the build settle when they arrive and agents at rest are not rewritten; motion trails only
   for agents at work. Reason: constant micro-motion of idle agents cost ~1 fps on the dental page without a GPU.
+
+## Task 5 (1.4.0): visitors use the page while it builds
+
+The bug: every click and key ended the effect at once. On pages with a consent banner (most real sites) the visitor
+presses Accept right away and saw ~5-15 % of the effect. Fixed in the module (general, any HTML / React / Next.js page);
+the test pages only give evidence.
+
+| part | state | notes |
+|---|---|---|
+| exits on purpose only | done | Esc (page-owned Esc excepted, twice always), double click / double tap on an empty spot; `exitOn` |
+| page actions keep the build going | done | consent, menus, forms, pop-ups, links, chat widget; mouse, touch, keyboard |
+| focus on unbuilt parts | done | the focused part is built at once (no hidden focus) |
+| banner forms | done | top bar in the page flow, dialog on a backdrop, fixed bottom bar, added later by a script |
+| layout changes by the page | done | probe every 0.15 s (0.05 s after input), re-measure, running part finished at once |
+| late surfaces | done | everything added is shown at once; fixed ones (also hidden at the scan) cut out |
+| modal with a backdrop | done | build paused, overlay hidden (`pauseOnModal`) |
+| SPA route change | done | new page complete at once (exit `route`) |
+| verify `interact` + `seen` | done | see below |
+| test page `bakery` | done | four banner forms via `?banner=` |
+
+### Decisions (task 5)
+
+- Exit gesture: **Esc** + **double click / double tap on an empty spot**. Reason: both are simple, need no visible UI
+  and do not happen in normal use; a single click or tap is normal use (and a tap that stops a fling, or a click on an
+  empty spot, must not end it). Rejected: long press (text selection / context menu on phones), two-finger tap (no
+  desktop equivalent), a triple click (nobody finds it).
+- Esc that belongs to the page (focus in an open dialog / menu / list box / expanded control, an open `aria-modal` or
+  modal `<dialog>`, or `preventDefault` by the page) does not end the effect; a second Esc within 1.5 s always does.
+  Reason: Esc closing a newsletter pop-up must not also kill the effect, but keyboard users always need a way out.
+- Double click on text selects a word (normal use, no exit); the browser also selects the nearest word when the double
+  click hits free space next to text: if the selection is not under the pointer, it is dropped and the effect ends.
+- Touch: the browser also fires `dblclick` for a double tap: ignored; our own double tap detection (two taps < 0.4 s,
+  < 32 px apart, each < 0.3 s and < 12 px of movement, no scrolling within 0.3 s before) decides, and it suppresses the
+  zoom with `preventDefault` on that `touchend`.
+- Keyboard focus on an unbuilt part builds that part (and the boxes around it) at once instead of ending the effect.
+  Reason: Tab must reach the consent button without killing the effect, and a focus ring on an invisible element is
+  an accessibility failure. The screen-reader message now says "press Escape" (19 languages rewritten).
+- Unbuilt parts stay unclickable (they are `visibility: hidden`, so the browser does not hit them): a click there does
+  nothing. Not revealing them on click: the visitor would trigger something they never saw.
+- Consent / dialog surfaces are recognised by role (`dialog`, `alertdialog`, `aria-modal`, `<dialog>`), by
+  `[data-swarm-surface]` and by name (id / class / aria-label: consent, gdpr, ccpa, cookie-banner, cookie-bar,
+  cookie-notice ...), only when small (< 60 % of the screen) and holding a control. Not "contains the word cookie":
+  a bakery's `cookie-card` product list is content (the bakery test page has one on purpose).
+- Layout changes: a cheap probe (12 elements spread over the page + the parts being built + scrollHeight, not inside
+  sticky elements) instead of observers on everything; when anything moved, a full re-measure (~400 rects, a few ms,
+  only then). A part being built when its place moves is finished at once (a small pop) instead of re-targeting every
+  overlay piece mid-animation (risk of stale pieces). Pending parts simply use the new place.
+- Reveal rules (nth-child paths) are rebuilt inside the MutationObserver callback (before the next paint), not on the
+  next frame: removing a banner at the top of `<body>` shifts every path, and a frame with stale rules would flash.
+- A modal with a backdrop (fixed, >= 85 % of the screen, own colour >= 0.15 alpha or a backdrop blur, z-index >= 0,
+  holding something; or a modal `<dialog>`) pauses the build and hides the overlay; timers and watchdogs are shifted
+  by the pause. Reason: the visitor deals with the dialog first; building behind a dimmed backdrop with the overlay on
+  top looked wrong, and building without showing it wastes the effect. A consent wall at load holds the opening.
+- SPA route change (new URL without the hash, or > 50 % of the unbuilt parts removed): the effect ends and shows the
+  new page complete. Reason: the new view was never scanned; restarting would hide what the visitor just asked for.
+- Version 1.4.0, not 1.3.1: the default behaviour changes and there are four new options.
+- Size budget raised from 30 to 32 KB gzip for the module (1.4.0: 30.8 KB); terser settings gain < 0.1 KB.
 
 ## Task 4 (night run, unattended): progress
 

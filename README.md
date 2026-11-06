@@ -8,8 +8,10 @@ spring-like finale, paths that bend with the weight of the carried element, bigg
 agents that dodge the mouse pointer and follow it for a moment.
 Only what is in view is built (an element starts when 60 % of it is on screen; no agent ever works off screen), idle
 agents never pile up, and text is typed correctly in any language and writing direction (accents, emoji, Arabic,
-Hebrew, Japanese). Visitors see no controls: any click or key (scroll keys only scroll) shows the finished page at
-once; reduced motion, search engines and returning visitors get the page without the effect.
+Hebrew, Japanese). Visitors see no controls and can use the page while it builds: a consent banner, menus, forms, pop-ups and links
+work and the build goes on (the page may move, e.g. a banner that closes, and a pop-up with a backdrop pauses the
+build). Esc or a double click / double tap on an empty spot shows the finished page at once; reduced motion, search
+engines and returning visitors get the page without the effect.
 It only changes what is shown: the page's DOM is untouched, there is no layout shift, no dependencies, no network
 requests and no sound, and the page is never left half hidden (errors, stuck parts, a stopped script, resizing and
 background tabs all end with the whole page visible). Works on plain HTML, React and Next.js sites.
