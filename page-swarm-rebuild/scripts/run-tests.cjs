@@ -55,7 +55,7 @@ const EXTRA = {
   spa: ['--interact', '#cart', '--route', '#start'],
   // the bakery in its four consent forms (interact group: the visitor uses the page while it builds)
   bakery: ['--consent', '#top-accept', '--menu', '#visit-btn|#visit-panel', '--menu-mobile', '#burger|#mnav', '--field', '#o-name', '--popup', '#nl-open|#nl-close', '--anchor', '#order-btn'],
-  'bakery-modal': ['--consent', '#modal-accept'],
+  'bakery-modal': ['--consent', '#modal-accept', '--answer', '#modal-accept'],
   'bakery-bottom': ['--consent', '#bottom-accept'],
   'bakery-late': ['--consent', '#late-accept', '--late']
 };

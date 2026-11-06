@@ -40,6 +40,7 @@
  *   manual   the visitor takes over: a debug tour interrupted by wheel scrolling, then a scroll-mode run
  *   all      record,extra,product,protect,fixed,visible,text,a11y,motion
  *
+ * --answer   a consent dialog that holds the page until it is answered: clicked in the recorded run and on the reference
  * --consent  the accept button of a cookie / consent banner (also one a script adds later): clicked during the build,
  *            it must work at the first click (the banner goes away) and the effect ends
  * --color-scheme  emulate the system's dark or light mode
@@ -307,9 +308,14 @@ function fixedTargets() {
   const bp = await base.newPage();
   await bp.goto(withParams(args.url, { rebuild: '0' }), { waitUntil: 'load' });
   await bp.waitForTimeout(400);
+  // --answer: a consent dialog that holds the page is answered, as the visitor does in the recorded run
+  if (args.answer && args.answer !== true) { await bp.waitForSelector(String(args.answer), { state: 'visible', timeout: 9000 }).catch(() => {}); await bp.click(String(args.answer)).catch(() => {}); }
   // read the page once like a visitor (lazy images, scroll-reveal parts), then back to the top
   await bp.evaluate(async () => { const st = Math.max(200, innerHeight * 0.8); for (let y = 0; y < document.documentElement.scrollHeight; y += st) { scrollTo(0, y); await new Promise((r) => setTimeout(r, 70)); } scrollTo(0, 0); });
   await bp.waitForTimeout(700);
+  // what the page adds later by itself (a chat widget, a consent manager) is part of the reference: wait until the DOM
+  // has not changed for 1.5 s (at most 8 s)
+  await bp.evaluate(async () => { let last = document.body.outerHTML, quiet = 0; for (let t = 0; t < 8000 && quiet < 1500; t += 250) { await new Promise((r) => setTimeout(r, 250)); const d = document.body.outerHTML; if (d === last) quiet += 250; else { quiet = 0; last = d; } } });
   const baseDom = await bp.evaluate(() => document.body.outerHTML);
   const baseVis = await bp.evaluate(VIS_MAP);
   await stillPage(bp);
@@ -331,7 +337,7 @@ function fixedTargets() {
     watchConsole(page, consoleBag);
     const t0 = Date.now();
     await page.goto(effectUrl(MODE, { params: { 'rebuild-speed': SPEED } }), { waitUntil: 'domcontentloaded' });
-    let doneAt = null, i = 0, instantChecked = false;
+    let doneAt = null, i = 0, instantChecked = false, answered = false;
     const maxMs = (MODE === 'tour' && !SPEED ? 120 : 75) * 1000;
     while (Date.now() - t0 < maxMs) {
       const tick = Date.now();
@@ -341,6 +347,7 @@ function fixedTargets() {
       await page.screenshot({ path: f, type: 'jpeg', quality: 70, caret: 'initial' }).catch(() => {});
       s.frame = path.basename(f);
       timeline.push(s);
+      if (args.answer && args.answer !== true && s.modal && !answered) { answered = true; await page.click(String(args.answer)).catch(() => {}); }
       if (s.phase === 'build' && !instantChecked && s.buildT > 0.3) {
         instantChecked = true;
         const inst = await page.evaluate(() => {
@@ -1250,7 +1257,8 @@ function fixedTargets() {
           });
           if (hl) v.hlMode = (v.hlMode || 0) + 1;
           // caret: next to the last typed character of the text being typed, on its writing side
-          root.querySelectorAll('.sr-caret').forEach((c) => {
+          const moving = v.lastY !== scrollY; v.lastY = scrollY; // (mid-scroll the caret of this frame may still be from the last one)
+          if (!moving) root.querySelectorAll('.sr-caret').forEach((c) => {
             const m = /translate3d\(([-\d.]+)px,\s*([-\d.]+)px/.exec(c.style.transform || '');
             if (!m) return;
             const cx = parseFloat(m[1]) - scrollX, cy = parseFloat(m[2]) - scrollY;
