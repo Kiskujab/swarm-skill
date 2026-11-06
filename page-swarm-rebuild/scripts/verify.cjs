@@ -1231,11 +1231,11 @@ function fixedTargets() {
           v.frames++;
           // typed texts: split ones (typed text node + <sr-r> rest) and right-to-left ones whose rest is a CSS highlight range
           const items = [];
-          root.querySelectorAll('sr-r').forEach((r) => { const n = r.previousSibling; if (n && n.nodeType === 3 && r.textContent) items.push({ n, k: n.data.length, full: n.data + r.textContent, par: r.parentNode }); });
+          root.querySelectorAll('sr-r').forEach((r) => { const n = r.previousSibling; if (n && n.nodeType === 3) items.push({ n, k: n.data.length, full: n.data + r.textContent, par: r.parentNode }); });
           const hl = window.CSS && CSS.highlights && CSS.highlights.get('sr-rest');
-          if (hl) hl.forEach((h) => { const n = h.startContainer; if (n && n.nodeType === 3 && root.contains(n) && h.startOffset < n.data.length) items.push({ n, k: h.startOffset, full: n.data, par: n.parentNode }); });
+          if (hl) hl.forEach((h) => { const n = h.startContainer; if (n && n.nodeType === 3 && root.contains(n)) items.push({ n, k: h.startOffset, full: n.data, par: n.parentNode }); });
           items.forEach((it) => {
-            if (!it.k) return;
+            if (!it.k || it.k >= it.full.length) return; // nothing typed yet / typed completely: no cut
             v.cuts++;
             const full = it.full, k = it.k;
             if (/[؀-ۿ]/.test(full)) v.scripts.arabic = 1; if (/[֐-׿]/.test(full)) v.scripts.hebrew = 1;

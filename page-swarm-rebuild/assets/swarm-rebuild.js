@@ -362,8 +362,7 @@
       if (o.shown !== take && o.dir && restHL()) {
         var cut0 = take ? o.ends[take - 1] : 0;
         if (!o.hr) { o.hr = document.createRange(); restHL.h.add(o.hr); }
-        o.hr.setStart(o.n, cut0); o.hr.setEnd(o.n, o.full.length);
-        if (cut0 >= o.full.length) { restHL.h.delete(o.hr); o.hr = null; }
+        o.hr.setStart(o.n, cut0); o.hr.setEnd(o.n, o.full.length); // (typed completely: an empty range, paints nothing)
         o.shown = take; o.cutAt = cut0;
       } else if (o.shown !== take) {
         if (!o.rest) { // created on first use only (copies that are never typed keep their structure)
