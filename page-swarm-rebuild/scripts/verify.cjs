@@ -567,7 +567,8 @@ function fixedTargets() {
       // (in scroll mode the view may be complete already: read on a little, the build must follow)
       for (let k = 0; k < 4 && s1.phase === 'build' && s1.layersDone <= s0.layersDone; k++) { await page.mouse.wheel(0, Math.round(VH * 0.6)); await page.waitForTimeout(800); s1 = await page.evaluate(STATE); }
       check('product: the page\'s own keys (letters, Tab, Enter, Ctrl + arrow, a lone Shift) do not end the effect, the build goes on',
-        s0.phase === 'build' && (s1.phase === 'build' ? s1.layersDone > s0.layersDone : s1.phase === 'done' || s1.lastExit === 'auto'),
+        // (Enter on a focused link of a single-page app opens another route: the new page is shown, exit "route")
+        s0.phase === 'build' && (s1.phase === 'build' ? s1.layersDone > s0.layersDone : s1.phase === 'done' || s1.lastExit === 'auto' || s1.lastExit === 'route'),
         keys.join(', ') + '; ' + s0.phase + ' ' + s0.layersDone + ' -> ' + s1.phase + ' ' + (s1.layersDone != null ? s1.layersDone : '') + (s1.lastExit ? ' (exit ' + s1.lastExit + ')' : ''));
       await ctx.close();
     }
