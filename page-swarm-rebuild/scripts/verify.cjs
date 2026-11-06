@@ -164,6 +164,8 @@ function watchConsole(page, bag) {
 }
 const STATE = () => window.SwarmRebuild ? window.SwarmRebuild.state() : { phase: 'not-loaded' };
 const gone = () => ({ root: !!document.getElementById('swarm-rebuild-root'), hide: !!document.getElementById('swarm-rebuild-hide'), reveal: !!document.getElementById('swarm-rebuild-reveal'), dom: document.body.outerHTML, s: window.SwarmRebuild ? window.SwarmRebuild.state() : null, cls: window.__cls });
+// the page's DOM once it stopped changing by itself (a chat widget added after 2 s ...): 1.5 s without change, at most 8 s
+const QUIET_DOM = async () => { let last = document.body.outerHTML, quiet = 0; for (let t = 0; t < 8000 && quiet < 1500; t += 250) { await new Promise((r) => setTimeout(r, 250)); const d = document.body.outerHTML; if (d === last) quiet += 250; else { quiet = 0; last = d; } } return last; };
 const isFinished = (g, baseDom) => !g.root && !g.hide && !g.reveal && domSame(g.dom, baseDom);
 // per-element visibility, in document order (the page loaded with the effect off is the reference)
 // in the page: a spot in view that is no control of the page (no link, button, field, dialog, fixed bar): a double click there ends the effect
@@ -443,9 +445,10 @@ function fixedTargets() {
     const fp = await fc.newPage();
     await fp.goto(effectUrl(MODE, { params: { 'rebuild-speed': SPEED } }), { waitUntil: 'domcontentloaded' });
     const fEnd = Date.now() + maxMs;
-    let fs2 = { phase: 'scan' }, wheel = 0;
+    let fs2 = { phase: 'scan' }, wheel = 0, fAnswered = false;
     while (Date.now() < fEnd) {
       fs2 = await fp.evaluate(STATE).catch(() => ({ phase: 'err' }));
+      if (args.answer && args.answer !== true && fs2.modal && !fAnswered) { fAnswered = true; await fp.click(String(args.answer)).catch(() => {}); }
       if (fs2.phase === 'done' || (fs2.phase === 'idle' && wheel > 5)) break;
       if (MODE !== 'tour' && fs2.phase === 'build') { await fp.mouse.wheel(0, Math.round(VH * 0.35)); wheel++; }
       await fp.waitForTimeout(500);
@@ -561,6 +564,7 @@ function fixedTargets() {
       await page.keyboard.press('Escape');
       await page.waitForTimeout(120);
       const g = await page.evaluate(gone);
+      g.dom = await page.evaluate(QUIET_DOM); // (overlay and hiding are gone at once; the DOM is compared once the page is quiet)
       check('product: Esc shows the finished page at once, without layout shift', s0.phase === 'build' && isFinished(g, baseDom) && g.cls < 0.01, 'exit ' + (g.s && g.s.lastExit) + ', CLS ' + (g.cls || 0).toFixed(4));
       await ctx.close();
     }
@@ -911,6 +915,7 @@ function fixedTargets() {
       await page.keyboard.press('Escape');
       await page.waitForTimeout(250);
       const g = await page.evaluate(gone);
+      g.dom = await page.evaluate(QUIET_DOM);
       check('interact: Esc ends the effect: the finished page at once (DOM identical), no layout shift', g.s && g.s.phase === 'idle' && g.s.lastExit === 'esc' && isFinished(g, baseDom) && (g.cls || 0) < 0.01, 'exit ' + (g.s && g.s.lastExit) + ', CLS ' + (g.cls || 0).toFixed(4));
       await ctx.close();
     });
