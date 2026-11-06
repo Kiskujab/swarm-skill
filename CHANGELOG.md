@@ -43,6 +43,11 @@ Test pages
   drop-down and hamburger menu, language switcher, order form, newsletter pop-up with a backdrop, chat widget added
   later, in-page links; on the landing page and in the Pages build.
 
+Measured: a visitor who presses Accept at 0.5 s / 2 s saw 0-19 % of the build with 1.3.0 and sees 100 % with 1.4.0
+(bakery, law, accounting; desktop and mobile). fps unchanged (interleaved bench, demo / dental desktop 58.8-59.9 both
+versions). Final suite (latest run per page): 1412/1417 checks; the 5 failures were in the test harness (fixed) or the
+noisy finale overshoot measurement.
+
 Size: module 31.2 KB gzip (budget raised from 30 to 32 KB for the interaction handling), stylesheet 1.6 KB.
 
 ## 1.3.0 — 2026-11-05 — visible-only build, any language, safe install

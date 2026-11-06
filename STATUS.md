@@ -80,6 +80,50 @@ the test pages only give evidence.
 | verify `interact` + `seen` | done | see below |
 | test page `bakery` | done | four banner forms via `?banner=` |
 
+### Measurements (task 5)
+
+- **How much of the effect a visitor sees who presses Accept right away** (`verify --checks seen`, 1.3.0 via
+  `--module`): 1.3.0 ended the effect at the click: Accept at 0.5 s -> 0-13 % of the build seen, at 2 s -> 5-19 %
+  (bakery top bar 13 / 11 %, bakery bottom bar 3 / 2 %, law 5 / 0 %, accounting 2 / 1 %, desktop / mobile). 1.4.0:
+  100 % everywhere; the build runs on 3.8-9 s after the click.
+- `interact` group on the bakery in four banner forms, law, accounting (desktop + mobile): the consent button clicked /
+  tapped at 0.5 s, 2 s and mid-build works at once, the choice is stored, the build goes on and ends with the same DOM
+  as the page after the same click without the effect, CLS 0; Tab + Enter / Space; drop-down and hamburger menu;
+  typing into a field ("Kovács Éva 😀"); newsletter pop-up (build paused 2.1 s, Esc closes the pop-up only); in-page
+  link (view filled after 1.5-1.8 s); SPA route (new page complete at once); one click / tap, slow taps, a double tap
+  while scrolling do not end it; a double click / tap on an empty spot and Esc do; with a consent wall open one Esc
+  belongs to the page, two end the effect; reduced motion still switches it off.
+- Arabic page `text` run: CLS 0.0203 -> 0.0000 (desktop and mobile) with the highlight-based right-to-left typing.
+- fps, interleaved 1.3.0 vs 1.4.0, 3 reps each, desktop: demo tour6 59.6 -> 59.8, scroll 59.6 -> 59.5, fast 59.3 ->
+  59.1; dental tour6 59.8 -> 59.9, scroll 59.1 -> 58.8, fast 59.3 -> 58.9 (all within the spread of single runs).
+- Size: module 31.2 KB gzip, stylesheet 1.6 KB (budget 32 + 2 KB).
+
+### Final suite (task 5; in parts because of the 2-hour limit of a background job; latest run per page)
+
+- Core (installer + demo / dental / Next.js, desktop + mobile, all groups incl. `interact`): **662/666**; installer
+  31/31. The 4 failures: demo desktop tour6 caret 7 off (verify bug: completely typed texts were left out as caret
+  candidates, fixed; reruns 0 off) and finale overshoot 50 % (noisy measurement against moving orbit places: reruns
+  14 / 14 / 36 / 12 / 9 / 55 %, 1.3.0 13-36 %; the finale code is unchanged, 0 relayouts in tour runs); dental mobile
+  "the page's own keys" (verify waited without scrolling while the view was complete; fixed, rerun passes) and caret 1
+  off (sampled mid-scroll; the sampler now skips scrolling frames, reruns 0 off).
+- Languages, Bootstrap, SPA (12 runs): **354/355**; the failure was verify's (Enter on a focused SPA route link
+  navigates: exit `route` is correct; fixed).
+- Law + accounting (4 runs, with `interact`): **164/164**.
+- Bakery in four banner forms (8 runs): **232/232** (after verify fixes: the reference waits for the chat widget added
+  after 2 s, `--answer` for the consent wall).
+- Total of the latest runs: **1412/1417**; every failure was in the test harness or the noisy overshoot measurement.
+- CLS 0.0000 everywhere (also the Arabic page now), pixel difference 0.000 %, fps 58.5-60 (module-measured).
+
+### What is done / not done / stuck (task 5)
+
+- Done: everything in the task: interaction-safe exits, Esc / double click / double tap, focus builds, banner forms,
+  layout changes, late surfaces, modal pause, SPA routes, verify `interact` + `seen`, bakery test page (landing page,
+  Pages build), docs (SKILL.md, README, CHANGELOG 1.4.0), Arabic CLS fixed.
+- Not verifiable here: real phones (iOS Safari double tap, zoom, virtual keyboard), a real mouse, real consent
+  managers (OneTrust, Cookiebot ... cannot be reached from the container; the bakery imitates the patterns), the live
+  Pages site.
+- Stuck: nothing. Known noise: the finale overshoot check (see above).
+
 ### Decisions (task 5)
 
 - Exit gesture: **Esc** + **double click / double tap on an empty spot**. Reason: both are simple, need no visible UI
@@ -116,7 +160,9 @@ the test pages only give evidence.
 - SPA route change (new URL without the hash, or > 50 % of the unbuilt parts removed): the effect ends and shows the
   new page complete. Reason: the new view was never scanned; restarting would hide what the visitor just asked for.
 - Version 1.4.0, not 1.3.1: the default behaviour changes and there are four new options.
-- Size budget raised from 30 to 32 KB gzip for the module (1.4.0: 30.8 KB); terser settings gain < 0.1 KB.
+- Size budget raised from 30 to 32 KB gzip for the module (1.4.0: 31.2 KB); terser settings gain < 0.1 KB.
+- Right-to-left typing through a CSS custom highlight instead of a split node (fixes the open Arabic CLS); browsers
+  without the Highlight API keep the split (they get the old 0.002-0.02 overlay shift).
 
 ## Task 4 (night run, unattended): progress
 
@@ -157,7 +203,7 @@ Order A, B, C, D, E, F, G, H; commit + push after every block. Full suite only o
 - Not done / not verifiable here: real devices (iOS Safari, Android, a real mouse), real websites (no outside network),
   the live GitHub Pages site (github.io is blocked from the container), a Vite production build (installer tested on
   file level only), a Lighthouse run on a real phone.
-- Stuck: Arabic overlay CLS 0.002-0.02 (above).
+- Stuck: Arabic overlay CLS 0.002-0.02 (above) — solved in 1.4.0 (CSS highlight, see task 5).
 
 ### Decisions (task 4)
 
